@@ -57,26 +57,7 @@ Future<String?> getUserRole(String uid) async {
 /// Iniciar sesión y renovar token antes de acceder a Firestore
 Future<String?> loginUser(String email, String password) async {
   try {
-    // Intentar autenticación con FirebaseAuth
-    UserCredential userCredential = await auth.signInWithEmailAndPassword(
-      email: email.trim(),
-      password: password.trim(),
-    );
-
-    User? user = userCredential.user;
-
-    if (user != null) {
-      // 🔄 Forzar renovación del token
-      await user.getIdToken(true);
-      print('Token renovado para: ${user.email}');
-
-      // Buscar rol en 'users'
-      return await getUserRole(user.uid);
-    }
-  } on FirebaseAuthException catch (e) {
-    print('FirebaseAuth Error: ${e.code} - ${e.message}');
-
-    // Si el usuario no está registrado en FirebaseAuth, buscamos en 'students'
+    // PRIMERO: Buscar en 'students' (prioridad alta)
     try {
       QuerySnapshot studentQuery = await firestore
           .collection('students')
@@ -86,6 +67,7 @@ Future<String?> loginUser(String email, String password) async {
 
       if (studentQuery.docs.isNotEmpty) {
         final studentData = studentQuery.docs.first.data() as Map<String, dynamic>;
+        print('Usuario encontrado en students: ${studentData['role']}');
 
         if (studentData['password'] == password.trim()) {
           // Verificar si está verificado
@@ -95,10 +77,35 @@ Future<String?> loginUser(String email, String password) async {
             print('Estudiante no verificado');
             return null;
           }
+        } else {
+          print('Contraseña incorrecta para estudiante');
+          return null;
         }
       }
     } catch (e) {
       print('Error al buscar en students: $e');
+    }
+
+    // SEGUNDO: Si no está en students, intentar FirebaseAuth
+    try {
+      UserCredential userCredential = await auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
+
+      User? user = userCredential.user;
+
+      if (user != null) {
+        // 🔄 Forzar renovación del token
+        await user.getIdToken(true);
+        print('Token renovado para: ${user.email}');
+
+        // Buscar rol en 'users'
+        return await getUserRole(user.uid);
+      }
+    } on FirebaseAuthException catch (e) {
+      print('FirebaseAuth Error: ${e.code} - ${e.message}');
+      return null;
     }
   } catch (e, stacktrace) {
     print('Error inesperado: $e');

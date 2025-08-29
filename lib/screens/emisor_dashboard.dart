@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../constants/roles.dart';
 
-class StudentDashboard extends StatelessWidget {
+class EmisorDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Dashboard del Estudiante - UV'),
+        title: Text('Dashboard del Emisor - UV'),
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
       ),
@@ -31,7 +31,7 @@ class StudentDashboard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Bienvenido, Estudiante UV',
+                    'Bienvenido, Emisor de Certificados',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 24,
@@ -40,7 +40,7 @@ class StudentDashboard extends StatelessWidget {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    UserRoles.getRoleDescription(UserRoles.STUDENT),
+                    UserRoles.getRoleDescription(UserRoles.EMISOR),
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 16,
@@ -54,7 +54,7 @@ class StudentDashboard extends StatelessWidget {
             
             // Funcionalidades principales
             Text(
-              'Mis Certificados y Documentos',
+              'Funcionalidades Disponibles',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -73,51 +73,49 @@ class StudentDashboard extends StatelessWidget {
                 children: [
                   _buildFunctionalityCard(
                     context,
-                    'Ver Mis Certificados',
-                    Icons.description,
-                    'Consulta todos tus certificados emitidos',
-                    () => _showComingSoon(context, 'Ver Certificados'),
-                    color: Colors.blue,
+                    'Emitir Certificados',
+                    Icons.school,
+                    'Crear y emitir nuevos certificados para estudiantes',
+                    () => _showComingSoon(context, 'Emitir Certificados'),
                   ),
                   _buildFunctionalityCard(
                     context,
-                    'Organizar Documentos',
-                    Icons.folder,
-                    'Organiza y categoriza tus documentos',
-                    () => _showComingSoon(context, 'Organizar Documentos'),
+                    'Gestionar Estudiantes',
+                    Icons.people,
+                    'Ver y validar información de estudiantes',
+                    () => _showComingSoon(context, 'Gestionar Estudiantes'),
+                  ),
+                  _buildFunctionalityCard(
+                    context,
+                    'Ver Certificados',
+                    Icons.description,
+                    'Consultar certificados emitidos',
+                    () => _showComingSoon(context, 'Ver Certificados'),
                     color: Colors.green,
                   ),
                   _buildFunctionalityCard(
                     context,
-                    'Compartir Certificados',
-                    Icons.share,
-                    'Comparte certificados por QR o enlace',
-                    () => _showComingSoon(context, 'Compartir Certificados'),
+                    'Plantillas',
+                    Icons.edit_note,
+                    'Editar plantillas de certificados',
+                    () => _showComingSoon(context, 'Plantillas'),
                     color: Colors.orange,
                   ),
                   _buildFunctionalityCard(
                     context,
-                    'Descargar PDFs',
-                    Icons.download,
-                    'Descarga tus certificados en PDF',
-                    () => _showComingSoon(context, 'Descargar PDFs'),
-                    color: Colors.red,
-                  ),
-                  _buildFunctionalityCard(
-                    context,
-                    'Historial Académico',
-                    Icons.history_edu,
-                    'Consulta tu historial académico completo',
-                    () => _showComingSoon(context, 'Historial Académico'),
-                    color: Colors.purple,
-                  ),
-                  _buildFunctionalityCard(
-                    context,
-                    'Estado de Verificación',
+                    'Validaciones',
                     Icons.verified,
-                    'Verifica el estado de tus documentos',
-                    () => _showComingSoon(context, 'Estado de Verificación'),
-                    color: Colors.teal,
+                    'Validar información académica',
+                    () => _showComingSoon(context, 'Validaciones'),
+                    color: Colors.blue,
+                  ),
+                  _buildFunctionalityCard(
+                    context,
+                    'Reportes',
+                    Icons.analytics,
+                    'Generar reportes de emisión',
+                    () => _showComingSoon(context, 'Reportes'),
+                    color: Colors.purple,
                   ),
                 ],
               ),
@@ -185,8 +183,8 @@ class StudentDashboard extends StatelessWidget {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Funcionalidad en Desarrollo'),
-          content: Text('La funcionalidad "$feature" estará disponible próximamente.'),
+          title: Text('Próximamente'),
+          content: Text('La funcionalidad "$feature" estará disponible en la próxima versión.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),

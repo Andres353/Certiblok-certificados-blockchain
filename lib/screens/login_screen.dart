@@ -21,12 +21,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       String? role = await loginUser(emailCtrl.text, passwordCtrl.text);
+      print('=== DEBUG LOGIN ===');
+      print('Email: ${emailCtrl.text}');
+      print('Rol retornado: $role');
+      print('Tipo de rol: ${role.runtimeType}');
+      
       if (role != null) {
+        print('Navegando a HomePage con rol: $role');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => HomePage(role: role)),
         );
       } else {
+        print('Rol es null - login falló');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('Correo o contraseña incorrectos o usuario no registrado')),

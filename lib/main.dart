@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:frontend_app/screens/main_menu.dart';
-import 'package:frontend_app/screens/set_password_page.dart'; // <-- Importa aquí
+import 'package:frontend_app/screens/set_password_page.dart';
+import 'package:frontend_app/screens/manage_emisores_screen.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -33,6 +34,14 @@ class MyApp extends StatelessWidget {
             builder: (_) => SetPasswordPage(userId: userId),
           );
         }
+        
+        // Ruta para gestión de emisores
+        if (settings.name == '/manage_emisores') {
+          return MaterialPageRoute(
+            builder: (_) => ManageEmisoresScreen(),
+          );
+        }
+        
         // Otras rutas...
         return null;
       },

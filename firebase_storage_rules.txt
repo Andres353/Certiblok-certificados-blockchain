@@ -1,0 +1,26 @@
+// Reglas de Firebase Storage para permitir CORS en web
+// Copia estas reglas en Firebase Console > Storage > Rules
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Permitir lectura y escritura para todos los archivos
+    match /{allPaths=**} {
+      allow read, write: if true;
+    }
+    
+    // Reglas específicas para logos de instituciones
+    match /institution_logos/{fileName} {
+      allow read, write: if true;
+    }
+    
+    // Reglas para otros tipos de archivos
+    match /certificates/{fileName} {
+      allow read, write: if true;
+    }
+    
+    match /documents/{fileName} {
+      allow read, write: if true;
+    }
+  }
+}

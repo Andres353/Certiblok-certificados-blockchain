@@ -1,17 +1,19 @@
-# 🎓 Certiblock - Plataforma de Certificados Académicos con Blockchain
+# 🎓 Certiblock - Plataforma Multi-Tenant de Certificados Académicos con Blockchain
 
 ## 📋 Descripción
 
-Certiblock es una plataforma innovadora que permite registrar y validar certificados académicos a través de la tecnología Blockchain, garantizando seguridad, trazabilidad y autenticidad en el proceso de emisión de títulos y certificados educativos.
+Certiblock es una plataforma innovadora multi-tenant que permite a instituciones académicas registrar y validar certificados académicos a través de la tecnología Blockchain, garantizando seguridad, trazabilidad y autenticidad en el proceso de emisión de títulos y certificados educativos.
 
 ## ✨ Características Principales
 
+- 🏢 **Multi-Tenant**: Soporte para múltiples instituciones académicas
 - 🔐 **Autenticación Segura**: Sistema de login con Firebase Auth
-- 👥 **Múltiples Roles**: Administradores, usuarios e instituciones
+- 👥 **Múltiples Roles**: Super Admin, Admin de Institución, Emisores, Estudiantes
 - 📧 **Verificación por Email**: Códigos de verificación para nuevos registros
 - 🌐 **Multiplataforma**: Aplicación Flutter para Web, iOS y Android
-- 🔒 **Base de Datos Segura**: Firestore con reglas de seguridad
+- 🔒 **Base de Datos Segura**: Firestore con reglas de seguridad y aislamiento por institución
 - 📱 **Diseño Responsivo**: Adaptable a diferentes tamaños de pantalla
+- 🎨 **Personalización**: Cada institución puede personalizar su marca y configuración
 
 ## 🚀 Tecnologías Utilizadas
 

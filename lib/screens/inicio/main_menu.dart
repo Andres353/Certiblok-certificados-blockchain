@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'login_with_institution.dart';
 import 'guest_page.dart';
+import 'student_registration.dart';
 import '../../header/HeaderHome.dart';
 
 class MainMenu extends StatelessWidget {
@@ -110,40 +111,6 @@ class MainMenu extends StatelessWidget {
     );
   }
 
-  // Método para construir botones web (en el contenido principal)
-  Widget _buildWebButtons(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color.fromARGB(255, 200, 190, 233),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            elevation: 5,
-            shadowColor: Colors.black26,
-          ),
-          onPressed: () => _navigateToLogin(context),
-          child: const Text('Iniciar Sesión'),
-        ),
-        const SizedBox(width: 16),
-        OutlinedButton(
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: Color(0xff6C4DDC), width: 2),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-          ),
-          onPressed: () => _navigateToRegister(context),
-          child: const Text(
-            'Registrarse',
-            style: TextStyle(color: Color(0xff6C4DDC)),
-          ),
-        ),
-      ],
-    );
-  }
 
   // Método para construir botones móviles
   Widget _buildMobileButtons(BuildContext context) {
@@ -238,9 +205,9 @@ class MainMenu extends StatelessWidget {
     );
   }
 
-  // Método para navegar al registro
+  // Método para navegar al registro (ambos tipos van al mismo lugar)
   void _navigateToRegister(BuildContext context) {
-    print('=== NAVEGACIÓN: Registrarse ===');
+    print('=== NAVEGACIÓN: Registro ===');
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => GuestPage()),

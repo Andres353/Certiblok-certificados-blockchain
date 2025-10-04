@@ -16,13 +16,15 @@ class EmailNotificationService {
     required String contactEmail,
     required String contactName,
     required String institutionId,
+    required String institutionCode,
   }) async {
     try {
       print('📧 Enviando notificación de aprobación a: $contactEmail');
       
       // Generar credenciales temporales
       final tempPassword = _generateTemporaryPassword();
-      final adminEmail = _generateAdminEmail(institutionName);
+      // Usar el email real de la institución en lugar del artificial
+      final adminEmail = contactEmail;
       
       // Crear usuario admin de la institución
       await _createInstitutionAdmin(
@@ -40,6 +42,7 @@ class EmailNotificationService {
         contactName: contactName,
         adminEmail: adminEmail,
         tempPassword: tempPassword,
+        institutionCode: institutionCode,
       );
       
       print('✅ Notificación de aprobación enviada exitosamente');
@@ -108,37 +111,45 @@ class EmailNotificationService {
           print('⚠️ No se pudo actualizar contraseña en Auth: $e');
         }
       } else {
-        // Crear nuevo usuario en Firebase Auth
-        final UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-        userId = userCredential.user!.uid;
-        print('✅ Nuevo usuario creado en Firebase Auth: $email');
-        
-        // Cerrar sesión del usuario actual si existe
-        await _auth.signOut();
+        // Crear nuevo usuario en Firebase Auth solo si no existe
+        try {
+          final UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+          userId = userCredential.user!.uid;
+          print('✅ Nuevo usuario creado en Firebase Auth: $email');
+          
+          // Cerrar sesión del usuario actual si existe
+          await _auth.signOut();
+        } catch (e) {
+          // Si el email ya existe en Auth, usar el email como ID
+          if (e.toString().contains('email-already-in-use')) {
+            print('⚠️ Email ya existe en Auth, usando email como ID...');
+            userId = email; // Usar el email como ID único
+            print('✅ Usando email como ID: $userId');
+          } else {
+            throw e;
+          }
+        }
       }
 
-      // Crear/actualizar perfil en Firestore
-      final userData = {
-        'email': email,
-        'name': contactName,
-        'role': 'admin_institution',
-        'institutionId': institutionId,
-        'institutionName': institutionName,
-        'isVerified': true,
-        'isSuperAdmin': false,
-        'createdAt': FieldValue.serverTimestamp(),
+      // Crear/actualizar perfil SOLO en la colección institutions
+      final institutionAdminData = {
+        'adminEmail': email,
+        'adminPassword': password,
+        'adminMustChangePassword': true,
+        'adminIsTemporaryPassword': true,
+        'adminName': contactName,
+        'adminUserId': userId, // Guardar el userId para referencia
         'updatedAt': FieldValue.serverTimestamp(),
-        'mustChangePassword': true, // Forzar cambio de contraseña
-        'isTemporaryPassword': true, // Marcar como contraseña temporal
       };
 
-      await _firestore.collection('users').doc(userId).set(userData, SetOptions(merge: true));
+      await _firestore.collection('institutions').doc(institutionId).update(institutionAdminData);
 
       print('✅ Usuario admin creado/actualizado: $email');
-      print('📋 Datos del usuario: $userData');
+      print('🆔 ID del usuario: $userId');
+      print('🏛️ Datos del admin en institución: $institutionAdminData');
     } catch (e) {
       print('❌ Error creando usuario admin: $e');
       throw Exception('Error creando usuario admin: $e');
@@ -158,17 +169,6 @@ class EmailNotificationService {
     return password;
   }
 
-  // Generar email admin para la institución
-  static String _generateAdminEmail(String institutionName) {
-    // Limpiar nombre de institución para email
-    final cleanName = institutionName
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), '')
-        .replaceAll(' ', '')
-        .substring(0, institutionName.length > 10 ? 10 : institutionName.length);
-    
-    return 'admin@$cleanName.certiblock.com';
-  }
 
   // Enviar email de aprobación
   static Future<void> _sendApprovalEmail({
@@ -177,6 +177,7 @@ class EmailNotificationService {
     required String contactName,
     required String adminEmail,
     required String tempPassword,
+    required String institutionCode,
   }) async {
     try {
       // Usar las mismas credenciales de EmailJS que el registro de estudiantes
@@ -191,21 +192,23 @@ Estimado/a $contactName,
 ¡Excelentes noticias! Su solicitud de registro para $institutionName ha sido APROBADA.
 
 Sus credenciales de acceso son:
-• Email: $adminEmail (su mismo email de contacto)
+• Email: $adminEmail (su email institucional)
 • Contraseña temporal: $tempPassword
+• Código de Institución: $institutionCode
 
 IMPORTANTE: 
 - Debe cambiar su contraseña en el primer acceso por seguridad
 - Use estas credenciales para hacer login en la plataforma
 - El sistema le pedirá cambiar la contraseña automáticamente
-- Funciona con cualquier email (Gmail, Outlook, Yahoo, etc.)
+- El código de institución es único y necesario para el registro de estudiantes
 
 Próximos pasos:
 1. Haga logout del Super Admin si está logueado
 2. Acceda a la plataforma con las credenciales proporcionadas
 3. Cambie su contraseña temporal por una personal
 4. Complete la configuración de su institución
-5. Comience a usar el sistema
+5. Comparta el código $institutionCode con sus estudiantes para el registro
+6. Comience a usar el sistema
 
 ¡Bienvenido a CertiBlock!
 
@@ -238,18 +241,20 @@ Estimado/a $contactName,
 ¡Excelentes noticias! Su solicitud de registro para $institutionName ha sido APROBADA.
 
 Sus credenciales de acceso son:
-• Email: $adminEmail (su mismo email de contacto)
+• Email: $adminEmail (su email institucional)
 • Contraseña temporal: $tempPassword
+• Código de Institución: $institutionCode
 
 IMPORTANTE: 
 - Debe cambiar su contraseña en el primer acceso por seguridad
-- Funciona con cualquier email (Gmail, Outlook, Yahoo, etc.)
+- El código de institución es único y necesario para el registro de estudiantes
 
 Próximos pasos:
 1. Acceda a la plataforma con las credenciales proporcionadas
 2. Cambie su contraseña temporal por una personal
 3. Complete la configuración de su institución
-4. Comience a usar el sistema
+4. Comparta el código $institutionCode con sus estudiantes para el registro
+5. Comience a usar el sistema
 
 ¡Bienvenido a CertiBlock!
 

@@ -12,21 +12,33 @@ class UserContext {
   final String userId;
   final String userRole;
   final String? institutionId;
+  final String? institutionName;
+  final String? institution; // Campo legacy para compatibilidad
   final Institution? currentInstitution;
   final String userEmail;
   final String userName;
   final bool mustChangePassword;
   final bool isTemporaryPassword;
+  final String? program;
+  final String? faculty;
+  final String? programId;
+  final String? facultyId;
 
   UserContext({
     required this.userId,
     required this.userRole,
     this.institutionId,
+    this.institutionName,
+    this.institution,
     this.currentInstitution,
     required this.userEmail,
     required this.userName,
     this.mustChangePassword = false,
     this.isTemporaryPassword = false,
+    this.program,
+    this.faculty,
+    this.programId,
+    this.facultyId,
   });
 
   // Verificar si el usuario requiere institución específica
@@ -60,10 +72,16 @@ class UserContext {
       'userId': userId,
       'userRole': userRole,
       'institutionId': institutionId,
+      'institutionName': institutionName,
+      'institution': institution,
       'userEmail': userEmail,
       'userName': userName,
       'mustChangePassword': mustChangePassword,
       'isTemporaryPassword': isTemporaryPassword,
+      'program': program,
+      'faculty': faculty,
+      'programId': programId,
+      'facultyId': facultyId,
     };
   }
 
@@ -73,11 +91,17 @@ class UserContext {
       userId: map['userId'] ?? '',
       userRole: map['userRole'] ?? '',
       institutionId: map['institutionId'],
+      institutionName: map['institutionName'],
+      institution: map['institution'],
       currentInstitution: institution,
       userEmail: map['userEmail'] ?? '',
       userName: map['userName'] ?? '',
       mustChangePassword: map['mustChangePassword'] ?? false,
       isTemporaryPassword: map['isTemporaryPassword'] ?? false,
+      program: map['program'],
+      faculty: map['faculty'],
+      programId: map['programId'],
+      facultyId: map['facultyId'],
     );
   }
 }
@@ -109,11 +133,16 @@ class UserContextService {
         userId: _currentContext!.userId,
         userRole: _currentContext!.userRole,
         institutionId: institution.id,
+        institutionName: institution.name,
         currentInstitution: institution,
         userEmail: _currentContext!.userEmail,
         userName: _currentContext!.userName,
         mustChangePassword: _currentContext!.mustChangePassword,
         isTemporaryPassword: _currentContext!.isTemporaryPassword,
+        program: _currentContext!.program,
+        faculty: _currentContext!.faculty,
+        programId: _currentContext!.programId,
+        facultyId: _currentContext!.facultyId,
       );
       
       // Actualizar en SharedPreferences
@@ -209,5 +238,8 @@ class UserContextService {
     
     return _currentContext!.mustChangePassword;
   }
+
+  // Verificar si el contexto está inicializado
+  static bool get isInitialized => _currentContext != null;
 }
 

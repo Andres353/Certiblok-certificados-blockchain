@@ -273,16 +273,47 @@ class _InstitutionManagementScreenState extends State<InstitutionManagementScree
                       color: Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Center(
-                      child: Text(
-                        institution.shortName,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
+                    child: institution.logoUrl.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              institution.logoUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Text(
+                                    institution.shortName,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                );
+                              },
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                );
+                              },
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              institution.shortName,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
                   ),
                   SizedBox(width: 12),
                   Expanded(

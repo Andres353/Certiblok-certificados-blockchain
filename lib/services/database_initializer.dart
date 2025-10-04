@@ -26,6 +26,7 @@ class DatabaseInitializer {
             shortName: sampleInstitution.shortName,
             description: sampleInstitution.description,
             logoUrl: sampleInstitution.logoUrl,
+            institutionCode: await InstitutionService.generateUniqueCode(sampleInstitution.shortName),
             colors: sampleInstitution.colors,
             settings: sampleInstitution.settings,
             createdBy: 'system_init',

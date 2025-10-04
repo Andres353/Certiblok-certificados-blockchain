@@ -9,6 +9,7 @@ class Institution {
   final String shortName;
   final String description;
   final String logoUrl;
+  final String institutionCode; // Código único de la institución
   final InstitutionColors colors;
   final InstitutionSettings settings;
   final InstitutionStatus status;
@@ -22,6 +23,7 @@ class Institution {
     required this.shortName,
     required this.description,
     required this.logoUrl,
+    required this.institutionCode,
     required this.colors,
     required this.settings,
     required this.status,
@@ -38,6 +40,7 @@ class Institution {
       shortName: data['shortName'] ?? '',
       description: data['description'] ?? '',
       logoUrl: data['logoUrl'] ?? '',
+      institutionCode: data['institutionCode'] ?? '',
       colors: InstitutionColors.fromMap(data['colors'] ?? {}),
       settings: InstitutionSettings.fromMap(data['settings'] ?? {}),
       status: InstitutionStatus.fromString(data['status'] ?? 'active'),
@@ -58,6 +61,7 @@ class Institution {
       'shortName': shortName,
       'description': description,
       'logoUrl': logoUrl,
+      'institutionCode': institutionCode,
       'colors': colors.toMap(),
       'settings': settings.toMap(),
       'status': status.toString(),
@@ -74,6 +78,7 @@ class Institution {
     String? shortName,
     String? description,
     String? logoUrl,
+    String? institutionCode,
     InstitutionColors? colors,
     InstitutionSettings? settings,
     InstitutionStatus? status,
@@ -87,6 +92,7 @@ class Institution {
       shortName: shortName ?? this.shortName,
       description: description ?? this.description,
       logoUrl: logoUrl ?? this.logoUrl,
+      institutionCode: institutionCode ?? this.institutionCode,
       colors: colors ?? this.colors,
       settings: settings ?? this.settings,
       status: status ?? this.status,

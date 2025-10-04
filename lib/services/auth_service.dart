@@ -9,6 +9,60 @@ import 'institution_service.dart';
 final FirebaseAuth auth = FirebaseAuth.instance;
 final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
+class AuthService {
+
+  static Future<Map<String, dynamic>> registerStudent({
+    required String email,
+    required String password,
+    required String fullName,
+    required String studentId,
+  }) async {
+    try {
+      // Verificar si el email ya existe
+      final existingQuery = await firestore
+          .collection('users')
+          .where('email', isEqualTo: email.trim())
+          .limit(1)
+          .get();
+
+      if (existingQuery.docs.isNotEmpty) {
+        return {
+          'success': false,
+          'message': 'El email ya está registrado',
+        };
+      }
+
+      // Crear el estudiante en Firestore
+      final docRef = await firestore.collection('users').add({
+        'email': email.trim(),
+        'password': password.trim(),
+        'fullName': fullName.trim(),
+        'studentId': studentId.trim(),
+        'role': 'student',
+        'isVerified': true,
+        'mustChangePassword': false,
+        'isTemporaryPassword': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'verificationCode': '000000',
+      });
+
+      print('✅ Estudiante registrado con ID: ${docRef.id}');
+
+      return {
+        'success': true,
+        'message': 'Estudiante registrado exitosamente',
+        'studentId': docRef.id,
+      };
+    } catch (e) {
+      print('❌ Error registrando estudiante: $e');
+      return {
+        'success': false,
+        'message': 'Error al registrar estudiante: $e',
+      };
+    }
+  }
+}
+
 /// Registrar un usuario con FirebaseAuth y guardarlo en la colección 'users'
 Future<void> registerUser(String email, String password) async {
   try {
@@ -60,44 +114,90 @@ Future<String?> getUserRole(String uid) async {
 
 /// Iniciar sesión y renovar token antes de acceder a Firestore
 Future<String?> loginUser(String email, String password) async {
+  print('🚀 INICIANDO loginUser para: $email');
   try {
-    // PRIMERO: Buscar en 'students' (prioridad alta)
+    // PRIMERO: Buscar en 'users' (todos los usuarios: student, emisor, etc.)
+    print('🔍 Buscando en colección users...');
     try {
-      QuerySnapshot studentQuery = await firestore
-          .collection('students')
+      QuerySnapshot usersQuery = await firestore
+          .collection('users')
           .where('email', isEqualTo: email.trim())
           .limit(1)
           .get();
 
-      if (studentQuery.docs.isNotEmpty) {
-        final studentData = studentQuery.docs.first.data() as Map<String, dynamic>;
-        print('Usuario encontrado en students: ${studentData['role']}');
+      print('📊 Resultados en users: ${usersQuery.docs.length} documentos encontrados');
+      if (usersQuery.docs.isNotEmpty) {
+        final userData = usersQuery.docs.first.data() as Map<String, dynamic>;
+        print('Usuario encontrado en users: ${userData['role']}');
 
-        if (studentData['password'] == password.trim()) {
+        // Para usuarios en Firestore, verificar contraseña directamente
+        print('🔍 DEBUG PASSWORD COMPARISON:');
+        print('   Contraseña ingresada: ${password.trim()}');
+        print('   Contraseña en BD: ${userData['password']}');
+        print('   ¿Coinciden?: ${userData['password'] == password.trim()}');
+        
+        if (userData['password'] == password.trim()) {
           // Verificar si está verificado
-          if (studentData['isVerified'] == true) {
+          if (userData['isVerified'] == true) {
+            final role = userData['role'] ?? 'admin_institution';
+            final institutionId = userData['institutionId'];
+            
+            // Cargar institución si existe
+            Institution? institution;
+            if (institutionId != null) {
+              try {
+                institution = await InstitutionService.getInstitution(institutionId);
+              } catch (e) {
+                print('Error loading institution: $e');
+                institution = SampleInstitutions.getInstitutionById(institutionId);
+              }
+            }
+
             // Verificar si debe cambiar contraseña
-            final mustChangePassword = studentData['mustChangePassword'] == true;
+            final mustChangePassword = userData['mustChangePassword'] == true;
+            final isTemporaryPassword = userData['isTemporaryPassword'] == true;
+
+            print('🔍 DEBUG PASSWORD CHANGE (USERS):');
+            print('   mustChangePassword: $mustChangePassword');
+            print('   isTemporaryPassword: $isTemporaryPassword');
+            print('   role: $role');
+
+            // Crear contexto de usuario
+            final context = UserContext(
+              userId: usersQuery.docs.first.id,
+              userRole: role,
+              institutionId: institutionId,
+              currentInstitution: institution,
+              userEmail: email.trim(),
+              userName: userData['name'] ?? userData['fullName'] ?? email.trim(),
+              mustChangePassword: mustChangePassword,
+              isTemporaryPassword: isTemporaryPassword,
+            );
+
+            // Establecer contexto
+            await UserContextService.setUserContext(context);
+
+            // Verificar si debe cambiar contraseña
             if (mustChangePassword) {
               print('⚠️ Usuario debe cambiar contraseña - usando loginWithContext');
-              // Redirigir al login con contexto para manejar cambio de contraseña
               return 'NEEDS_PASSWORD_CHANGE';
             }
-            return studentData['role'] ?? 'student';
+            
+            return role;
           } else {
-            print('Estudiante no verificado');
+            print('Usuario no verificado');
             return null;
           }
         } else {
-          print('Contraseña incorrecta para estudiante');
+          print('Contraseña incorrecta para usuario');
           return null;
         }
       }
     } catch (e) {
-      print('Error al buscar en students: $e');
+      print('Error al buscar en users: $e');
     }
 
-    // SEGUNDO: Si no está en students, intentar FirebaseAuth
+    // TERCERO: Si no está en users, intentar FirebaseAuth
     try {
       UserCredential userCredential = await auth.signInWithEmailAndPassword(
         email: email.trim(),
@@ -135,29 +235,39 @@ Future<String?> loginUser(String email, String password) async {
     print('Stacktrace: $stacktrace');
   }
 
+  print('❌ No se encontró usuario válido en ninguna colección');
   return null;
 }
 
 /// Iniciar sesión y establecer contexto de usuario multi-tenant
 Future<UserContext?> loginWithContext(String email, String password) async {
+  print('🚀 INICIANDO loginWithContext para: $email');
   try {
-    // PRIMERO: Buscar en 'students' (prioridad alta)
+    // PRIMERO: Buscar en 'users' (super_admin, emisor, student)
+    print('🔍 Buscando en colección users...');
     try {
-      QuerySnapshot studentQuery = await firestore
-          .collection('students')
+      QuerySnapshot usersQuery = await firestore
+          .collection('users')
           .where('email', isEqualTo: email.trim())
           .limit(1)
           .get();
 
-      if (studentQuery.docs.isNotEmpty) {
-        final studentData = studentQuery.docs.first.data() as Map<String, dynamic>;
-        print('Usuario encontrado en students: ${studentData['role']}');
+      print('📊 Resultados en users: ${usersQuery.docs.length} documentos encontrados');
+      if (usersQuery.docs.isNotEmpty) {
+        final userData = usersQuery.docs.first.data() as Map<String, dynamic>;
+        print('Usuario encontrado en users: ${userData['role']}');
 
-        if (studentData['password'] == password.trim()) {
+        // Verificar contraseña directamente
+        print('🔍 DEBUG PASSWORD COMPARISON (USERS):');
+        print('   Contraseña ingresada: ${password.trim()}');
+        print('   Contraseña en BD: ${userData['password']}');
+        print('   ¿Coinciden?: ${userData['password'] == password.trim()}');
+        
+        if (userData['password'] == password.trim()) {
           // Verificar si está verificado
-          if (studentData['isVerified'] == true) {
-            final role = studentData['role'] ?? 'student';
-            final institutionId = studentData['institutionId'];
+          if (userData['isVerified'] == true) {
+            final role = userData['role'] ?? 'student';
+            final institutionId = userData['institutionId'];
             
             // Cargar institución si existe
             Institution? institution;
@@ -171,22 +281,22 @@ Future<UserContext?> loginWithContext(String email, String password) async {
             }
 
             // Verificar si debe cambiar contraseña
-            final mustChangePassword = studentData['mustChangePassword'] == true;
-            final isTemporaryPassword = studentData['isTemporaryPassword'] == true;
+            final mustChangePassword = userData['mustChangePassword'] == true;
+            final isTemporaryPassword = userData['isTemporaryPassword'] == true;
 
-            print('🔍 DEBUG PASSWORD CHANGE (STUDENTS):');
+            print('🔍 DEBUG PASSWORD CHANGE (USERS):');
             print('   mustChangePassword: $mustChangePassword');
             print('   isTemporaryPassword: $isTemporaryPassword');
             print('   role: $role');
 
             // Crear contexto de usuario
             final context = UserContext(
-              userId: studentQuery.docs.first.id,
+              userId: usersQuery.docs.first.id,
               userRole: role,
               institutionId: institutionId,
               currentInstitution: institution,
               userEmail: email.trim(),
-              userName: studentData['fullName'] ?? email.trim(),
+              userName: userData['name'] ?? userData['fullName'] ?? email.trim(),
               mustChangePassword: mustChangePassword,
               isTemporaryPassword: isTemporaryPassword,
             );
@@ -196,67 +306,58 @@ Future<UserContext?> loginWithContext(String email, String password) async {
             
             return context;
           } else {
-            print('Estudiante no verificado');
+            print('Usuario no verificado');
             return null;
           }
         } else {
-          print('Contraseña incorrecta para estudiante');
-          return null;
+          print('Contraseña incorrecta para usuario en users');
         }
       }
     } catch (e) {
-      print('Error al buscar en students: $e');
+      print('Error al buscar en users: $e');
     }
 
-    // SEGUNDO: Si no está en students, intentar FirebaseAuth
+    // SEGUNDO: Buscar en 'institutions' (admin_institution)
+    print('🔍 Buscando en colección institutions...');
     try {
-      UserCredential userCredential = await auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
+      QuerySnapshot institutionsQuery = await firestore
+          .collection('institutions')
+          .where('adminEmail', isEqualTo: email.trim())
+          .limit(1)
+          .get();
 
-      User? user = userCredential.user;
+      print('📊 Resultados en institutions: ${institutionsQuery.docs.length} documentos encontrados');
+      if (institutionsQuery.docs.isNotEmpty) {
+        final institutionData = institutionsQuery.docs.first.data() as Map<String, dynamic>;
+        print('Institución encontrada: ${institutionData['name']}');
 
-      if (user != null) {
-        // 🔄 Forzar renovación del token
-        await user.getIdToken(true);
-        print('Token renovado para: ${user.email}');
+        // Verificar contraseña del admin
+        print('🔍 DEBUG PASSWORD COMPARISON (INSTITUTIONS):');
+        print('   Contraseña ingresada: ${password.trim()}');
+        print('   Contraseña en BD: ${institutionData['adminPassword']}');
+        print('   ¿Coinciden?: ${institutionData['adminPassword'] == password.trim()}');
 
-        // Buscar rol en 'users'
-        final role = await getUserRole(user.uid);
-        if (role != null) {
-          // Cargar datos del usuario
-          final userDoc = await firestore.collection('users').doc(user.uid).get();
-          final userData = userDoc.data();
-          
-          final institutionId = userData?['institutionId'];
-          Institution? institution;
-          if (institutionId != null) {
-            try {
-              institution = await InstitutionService.getInstitution(institutionId);
-            } catch (e) {
-              print('Error loading institution: $e');
-              institution = SampleInstitutions.getInstitutionById(institutionId);
-            }
-          }
+        if (institutionData['adminPassword'] == password.trim()) {
+          final institutionId = institutionsQuery.docs.first.id;
+          final institution = Institution.fromFirestore(institutionData, institutionId);
 
           // Verificar si debe cambiar contraseña
-          final mustChangePassword = userData?['mustChangePassword'] == true;
-          final isTemporaryPassword = userData?['isTemporaryPassword'] == true;
+          final mustChangePassword = institutionData['adminMustChangePassword'] == true;
+          final isTemporaryPassword = institutionData['adminIsTemporaryPassword'] == true;
 
-          print('🔍 DEBUG PASSWORD CHANGE:');
+          print('🔍 DEBUG PASSWORD CHANGE (INSTITUTIONS):');
           print('   mustChangePassword: $mustChangePassword');
           print('   isTemporaryPassword: $isTemporaryPassword');
-          print('   userData: $userData');
+          print('   role: admin_institution');
 
           // Crear contexto de usuario
           final context = UserContext(
-            userId: user.uid,
-            userRole: role,
+            userId: institutionId,
+            userRole: 'admin_institution',
             institutionId: institutionId,
             currentInstitution: institution,
             userEmail: email.trim(),
-            userName: userData?['name'] ?? user.displayName ?? email.trim(),
+            userName: institutionData['adminName'] ?? email.trim(),
             mustChangePassword: mustChangePassword,
             isTemporaryPassword: isTemporaryPassword,
           );
@@ -265,11 +366,12 @@ Future<UserContext?> loginWithContext(String email, String password) async {
           await UserContextService.setUserContext(context);
           
           return context;
+        } else {
+          print('Contraseña incorrecta para admin de institución');
         }
       }
-    } on FirebaseAuthException catch (e) {
-      print('FirebaseAuth Error: ${e.code} - ${e.message}');
-      return null;
+    } catch (e) {
+      print('Error al buscar en institutions: $e');
     }
   } catch (e, stacktrace) {
     print('Error inesperado: $e');
@@ -278,6 +380,7 @@ Future<UserContext?> loginWithContext(String email, String password) async {
 
   return null;
 }
+
 
 /// Cerrar sesión y limpiar contexto
 Future<void> logout() async {

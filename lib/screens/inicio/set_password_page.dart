@@ -19,9 +19,9 @@ class _SetPasswordPageState extends State<SetPasswordPage> {
       setState(() => _isSaving = true);
 
       try {
-        // Actualiza la contraseña en Firestore (puedes cambiar la lógica si usas Firebase Auth)
+        // Actualiza la contraseña en Firestore
         await FirebaseFirestore.instance
-            .collection('students')
+            .collection('users')
             .doc(widget.userId)
             .update({
           'password': _passwordController.text.trim(),

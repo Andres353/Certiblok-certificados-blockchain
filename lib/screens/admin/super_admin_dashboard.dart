@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/institution_service.dart';
+import '../../services/alert_service.dart';
 import '../../models/institution.dart';
 import 'institution_management_screen.dart';
 import 'institution_requests_screen.dart';
@@ -110,13 +111,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     // Reconfigurar suscripción
     _setupRealtimeUpdates();
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Datos actualizados desde Firebase'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
-      ),
-    );
+    AlertService.showSuccess(context, 'Éxito', 'Datos actualizados desde Firebase');
   }
 
   void _setupRealtimeUpdates() {
@@ -413,10 +408,135 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               Colors.grey,
               () => _showSystemSettings(),
             ),
+            
+            // Sección de instituciones recientes con logos
+            if (_institutions.isNotEmpty) ...[
+              SizedBox(height: 20),
+              Divider(),
+              SizedBox(height: 10),
+              Text(
+                'Instituciones Recientes',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xff2E2F44),
+                ),
+              ),
+              SizedBox(height: 12),
+              _buildRecentInstitutions(),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildRecentInstitutions() {
+    // Mostrar las 3 instituciones más recientes
+    final recentInstitutions = _institutions.take(3).toList();
+    
+    return Column(
+      children: recentInstitutions.map((institution) => 
+        Container(
+          margin: EdgeInsets.only(bottom: 8),
+          child: InkWell(
+            onTap: () => _viewInstitutionDetails(institution),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: institution.logoUrl.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              institution.logoUrl,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Text(
+                                    institution.shortName,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              institution.shortName,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          institution.name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xff2E2F44),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          institution.status.displayName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _getStatusColor(institution.status),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 14,
+                    color: Colors.grey[400],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ).toList(),
+    );
+  }
+
+  Color _getStatusColor(InstitutionStatus status) {
+    switch (status) {
+      case InstitutionStatus.active:
+        return Colors.green;
+      case InstitutionStatus.inactive:
+        return Colors.grey;
+      case InstitutionStatus.suspended:
+        return Colors.red;
+      case InstitutionStatus.pending:
+        return Colors.orange;
+    }
   }
 
   Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
@@ -570,16 +690,47 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             color: Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Center(
-            child: Text(
-              institution.shortName,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-          ),
+          child: institution.logoUrl.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    institution.logoUrl,
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Center(
+                        child: Text(
+                          institution.shortName,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              : Center(
+                  child: Text(
+                    institution.shortName,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
         ),
         title: Text(
           institution.name,
@@ -698,16 +849,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
   void _showAnalytics() {
     // TODO: Implementar analytics
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Analytics en desarrollo')),
-    );
+    AlertService.showInfo(context, 'Info', 'Analytics en desarrollo');
   }
+
 
   void _showSystemSettings() {
     // TODO: Implementar configuración del sistema
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Configuración del sistema en desarrollo')),
-    );
+    AlertService.showInfo(context, 'Info', 'Configuración del sistema en desarrollo');
   }
 
 
@@ -733,7 +881,57 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(institution.name),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: institution.logoUrl.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        institution.logoUrl,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Text(
+                              institution.shortName,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        institution.shortName,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                institution.name,
+                style: TextStyle(fontSize: 18),
+              ),
+            ),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -743,6 +941,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             Text('Programas: ${institution.settings.supportedPrograms.length}'),
             SizedBox(height: 8),
             Text('Estado: ${institution.status.displayName}'),
+            SizedBox(height: 8),
+            Text('Código: ${institution.institutionCode}'),
             SizedBox(height: 8),
             Text('Creado: ${institution.createdAt.toString().split(' ')[0]}'),
           ],
@@ -759,16 +959,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
   void _editInstitution(Institution institution) {
     // TODO: Implementar edición de institución
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Edición de institución en desarrollo')),
-    );
+    AlertService.showInfo(context, 'Info', 'Edición de institución en desarrollo');
   }
 
   void _suspendInstitution(Institution institution) {
     // TODO: Implementar suspensión de institución
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Suspensión de institución en desarrollo')),
-    );
+    AlertService.showInfo(context, 'Info', 'Suspensión de institución en desarrollo');
   }
 
   void _deleteInstitution(Institution institution) {
@@ -786,9 +982,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             onPressed: () {
               Navigator.pop(context);
               // TODO: Implementar eliminación
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Eliminación en desarrollo')),
-              );
+              AlertService.showInfo(context, 'Info', 'Eliminación en desarrollo');
             },
             child: Text('Eliminar', style: TextStyle(color: Colors.red)),
           ),

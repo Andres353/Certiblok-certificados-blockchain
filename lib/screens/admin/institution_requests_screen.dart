@@ -275,12 +275,48 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
           elevation: 2,
           child: ListTile(
             contentPadding: const EdgeInsets.all(16),
-            leading: CircleAvatar(
-              backgroundColor: request.getStatusColor().withOpacity(0.1),
-              child: Icon(
-                _getInstitutionIcon(request.institutionType),
-                color: request.getStatusColor(),
+            leading: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: request.getStatusColor().withOpacity(0.1),
+                borderRadius: BorderRadius.circular(25),
               ),
+              child: request.logoUrl.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(25),
+                      child: Image.network(
+                        request.logoUrl,
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Icon(
+                              _getInstitutionIcon(request.institutionType),
+                              color: request.getStatusColor(),
+                              size: 24,
+                            ),
+                          );
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(request.getStatusColor()),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        _getInstitutionIcon(request.institutionType),
+                        color: request.getStatusColor(),
+                        size: 24,
+                      ),
+                    ),
             ),
             title: Text(
               request.institutionName,

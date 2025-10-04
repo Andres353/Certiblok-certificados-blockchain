@@ -84,6 +84,11 @@ class InstitutionRequestService {
 
       print('✅ Solicitud encontrada: ${request.institutionName}');
 
+      // Generar código único para la institución
+      print('🔄 Generando código único para la institución...');
+      final String institutionCode = await InstitutionService.generateUniqueCode(request.shortName);
+      print('✅ Código generado: $institutionCode');
+
       // Crear la institución
       final Institution institution = Institution(
         id: '',
@@ -91,6 +96,7 @@ class InstitutionRequestService {
         shortName: request.shortName,
         description: request.description,
         logoUrl: request.logoUrl,
+        institutionCode: institutionCode,
         colors: InstitutionColors(
           primary: _getDefaultColorForType(request.institutionType),
           secondary: _getSecondaryColorForType(request.institutionType),
@@ -120,6 +126,7 @@ class InstitutionRequestService {
         shortName: institution.shortName,
         description: institution.description,
         logoUrl: institution.logoUrl,
+        institutionCode: institutionCode,
         colors: institution.colors,
         settings: institution.settings,
         createdBy: reviewedBy,
@@ -145,6 +152,7 @@ class InstitutionRequestService {
         contactEmail: request.contactEmail,
         contactName: request.contactName,
         institutionId: institutionId,
+        institutionCode: institutionCode,
       );
 
       return true;

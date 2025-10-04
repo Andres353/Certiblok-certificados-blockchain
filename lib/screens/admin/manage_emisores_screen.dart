@@ -19,6 +19,10 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
   bool _generatePassword = true; // Por defecto generar contraseña automáticamente
   bool _sendEmail = true; // Por defecto enviar email con credenciales
   
+  // Variables para tipos de emisores
+  Set<String> _selectedCarreraIds = <String>{};
+  List<Map<String, dynamic>> _carreras = [];
+  
   bool _isLoading = false;
   List<Map<String, dynamic>> _emisores = [];
 
@@ -26,6 +30,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
   void initState() {
     super.initState();
     _loadEmisores();
+    _loadCarreras();
   }
 
   @override
@@ -85,7 +90,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
       print('Cargando emisores para institución: ${userContext.institutionId}');
 
       QuerySnapshot querySnapshot = await _firestore
-          .collection('students')
+          .collection('users')
           .where('role', isEqualTo: 'emisor')
           .where('institutionId', isEqualTo: userContext.institutionId)
           .get();
@@ -112,12 +117,45 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     }
   }
 
+  Future<void> _loadCarreras() async {
+    try {
+      final userContext = UserContextService.currentContext;
+      if (userContext?.institutionId == null) return;
+
+      final querySnapshot = await _firestore
+          .collection('programs')
+          .where('institutionId', isEqualTo: userContext!.institutionId)
+          .get();
+
+      setState(() {
+        _carreras = querySnapshot.docs
+            .map((doc) => {
+                  'id': doc.id,
+                  ...doc.data(),
+                })
+            .toList()
+          ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+      });
+    } catch (e) {
+      print('Error cargando carreras: $e');
+    }
+  }
+
+
   Future<void> _createEmisor() async {
     if (_emailController.text.isEmpty ||
         _fullNameController.text.isEmpty ||
         (!_generatePassword && _passwordController.text.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Por favor completa todos los campos')),
+      );
+      return;
+    }
+
+    // Validar que se hayan seleccionado carreras
+    if (_selectedCarreraIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Por favor selecciona al menos una carrera')),
       );
       return;
     }
@@ -148,7 +186,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
 
       // Verificar si el email ya existe
       QuerySnapshot existingUser = await _firestore
-          .collection('students')
+          .collection('users')
           .where('email', isEqualTo: _emailController.text.trim())
           .get();
 
@@ -166,14 +204,42 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
           ? _generateSecurePassword() 
           : _passwordController.text.trim();
 
+      // Crear asignaciones basadas en las carreras seleccionadas
+      List<Map<String, dynamic>> assignments = [];
+      
+      if (_selectedCarreraIds.contains('all')) {
+        // Emisor general - puede emitir a todos los estudiantes
+        assignments.add({
+          'id': 'general_${DateTime.now().millisecondsSinceEpoch}',
+          'type': 'general',
+          'areaId': 'all',
+          'areaName': 'Todos los estudiantes',
+        });
+      } else {
+        // Emisor específico - solo a las carreras seleccionadas
+        for (final carreraId in _selectedCarreraIds) {
+          final carrera = _carreras.firstWhere((c) => c['id'] == carreraId);
+          assignments.add({
+            'id': 'carrera_${carreraId}_${DateTime.now().millisecondsSinceEpoch}',
+            'type': 'carrera',
+            'areaId': carreraId,
+            'areaName': carrera['name'],
+            'parentAreaId': carrera['facultyId'],
+            'parentAreaName': carrera['facultyName'],
+          });
+        }
+      }
+
       // Crear nuevo emisor
-      await _firestore.collection('students').add({
+      await _firestore.collection('users').add({
         'email': _emailController.text.trim(),
         'fullName': _fullNameController.text.trim(),
         'password': password,
         'role': 'emisor',
         'institutionId': userContext.institutionId,
         'institutionName': userContext.currentInstitution?.name ?? 'Institución',
+        'emisorType': _selectedCarreraIds.contains('all') ? 'general' : 'carrera',
+        'assignments': assignments, // Nuevo campo para asignaciones múltiples
         'isVerified': true,
         'mustChangePassword': true, // SIEMPRE debe cambiar contraseña en el primer login
         'isTemporaryPassword': _generatePassword, // Solo es temporal si se generó automáticamente
@@ -291,7 +357,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
 
     if (confirm) {
       try {
-        await _firestore.collection('students').doc(emisorId).delete();
+        await _firestore.collection('users').doc(emisorId).delete();
         await _loadEmisores();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Emisor eliminado exitosamente')),
@@ -305,14 +371,492 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     }
   }
 
-  void _showCreateEmisorDialog() {
+  Future<void> _toggleEmisorStatus(Map<String, dynamic> emisor) async {
+    final isCurrentlyActive = emisor['isActive'] != false;
+    final action = isCurrentlyActive ? 'suspender' : 'activar';
+    
+    bool confirm = await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Confirmar $action'),
+          content: Text('¿Estás seguro de que quieres $action este emisor?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(action == 'suspender' ? 'Suspender' : 'Activar'),
+              style: TextButton.styleFrom(
+                foregroundColor: action == 'suspender' ? Colors.orange : Colors.green,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm) {
+      try {
+        await _firestore.collection('users').doc(emisor['id']).update({
+          'isActive': !isCurrentlyActive,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        
+        await _loadEmisores();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Emisor ${action == 'suspender' ? 'suspendido' : 'activado'} exitosamente'),
+            backgroundColor: action == 'suspender' ? Colors.orange : Colors.green,
+          ),
+        );
+      } catch (e) {
+        print('Error ${action} emisor: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error ${action} emisor: $e')),
+        );
+      }
+    }
+  }
+
+  void _editEmisor(Map<String, dynamic> emisor) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWeb = screenWidth > 800;
+    
+    // Controladores para el formulario de edición
+    final emailController = TextEditingController(text: emisor['email']);
+    final fullNameController = TextEditingController(text: emisor['fullName']);
+    final passwordController = TextEditingController();
+    
+    // Variables para el estado del diálogo
+    Set<String> selectedCarreraIds = <String>{};
+    bool generatePassword = true;
+    
+    // Cargar asignaciones actuales
+    final assignments = emisor['assignments'] ?? [];
+    if (assignments.isNotEmpty) {
+      for (final assignment in assignments) {
+        final assignmentData = assignment as Map<String, dynamic>;
+        if (assignmentData['type'] == 'general') {
+          selectedCarreraIds.add('all');
+        } else if (assignmentData['type'] == 'carrera') {
+          selectedCarreraIds.add(assignmentData['areaId']);
+        }
+      }
+    }
     
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: Text(
+                'Editar Emisor',
+                style: TextStyle(
+                  fontSize: isWeb ? 20 : 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              content: Container(
+                width: isWeb ? 500 : double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: emailController,
+                        decoration: InputDecoration(
+                          labelText: 'Email',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          prefixIcon: Icon(Icons.email),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      SizedBox(height: 16),
+                      TextField(
+                        controller: fullNameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre Completo',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          prefixIcon: Icon(Icons.person),
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      
+                      // Tipo de Emisor
+                      Text(
+                        'Carreras Asignadas',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      
+                      // Opción para seleccionar todas las carreras
+                      Container(
+                        margin: EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: selectedCarreraIds.contains('all') 
+                                ? Color(0xff6C4DDC) 
+                                : Colors.grey[300]!,
+                            width: selectedCarreraIds.contains('all') ? 2 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          color: selectedCarreraIds.contains('all') 
+                              ? Color(0xff6C4DDC).withOpacity(0.1)
+                              : Colors.white,
+                        ),
+                        child: InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              if (selectedCarreraIds.contains('all')) {
+                                selectedCarreraIds.clear();
+                              } else {
+                                selectedCarreraIds.clear();
+                                selectedCarreraIds.add('all');
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Checkbox(
+                                  value: selectedCarreraIds.contains('all'),
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      if (value == true) {
+                                        selectedCarreraIds.clear();
+                                        selectedCarreraIds.add('all');
+                                      } else {
+                                        selectedCarreraIds.remove('all');
+                                      }
+                                    });
+                                  },
+                                  activeColor: Color(0xff6C4DDC),
+                                ),
+                                SizedBox(width: 12),
+                                Icon(
+                                  Icons.public,
+                                  color: selectedCarreraIds.contains('all') 
+                                      ? Color(0xff6C4DDC) 
+                                      : Colors.grey[600],
+                                  size: 20,
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Todas las carreras',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          color: selectedCarreraIds.contains('all') 
+                                              ? Color(0xff6C4DDC) 
+                                              : Colors.black87,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Puede emitir certificados a todos los estudiantes',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: selectedCarreraIds.contains('all') 
+                                              ? Color(0xff6C4DDC).withOpacity(0.8)
+                                              : Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Lista de carreras individuales
+                      if (!selectedCarreraIds.contains('all')) ...[
+                        Text(
+                          'Selecciona carreras específicas:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xff2E2F44),
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Container(
+                          height: 200,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[300]!),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: ListView.builder(
+                            itemCount: _carreras.length,
+                            itemBuilder: (context, index) {
+                              final carrera = _carreras[index];
+                              final carreraId = carrera['id'] as String;
+                              final isSelected = selectedCarreraIds.contains(carreraId);
+                              
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: isSelected 
+                                      ? Color(0xff6C4DDC).withOpacity(0.1)
+                                      : Colors.white,
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: Colors.grey[200]!,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                child: CheckboxListTile(
+                                  value: isSelected,
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      if (value == true) {
+                                        selectedCarreraIds.add(carreraId);
+                                      } else {
+                                        selectedCarreraIds.remove(carreraId);
+                                      }
+                                    });
+                                  },
+                                  title: Text(
+                                    carrera['name'],
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                      color: isSelected ? Color(0xff6C4DDC) : Colors.black87,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Carrera académica',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  activeColor: Color(0xff6C4DDC),
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      
+                      SizedBox(height: 16),
+                      
+                      // Opción para cambiar contraseña
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: generatePassword,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                generatePassword = value ?? true;
+                                if (generatePassword) {
+                                  passwordController.clear();
+                                }
+                              });
+                            },
+                          ),
+                          Expanded(
+                            child: Text(
+                              'Generar nueva contraseña',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      // Campo de contraseña manual (solo si no se genera automáticamente)
+                      if (!generatePassword) ...[
+                        SizedBox(height: 16),
+                        TextField(
+                          controller: passwordController,
+                          decoration: InputDecoration(
+                            labelText: 'Nueva contraseña',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            prefixIcon: Icon(Icons.lock),
+                            helperText: 'Mínimo 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos',
+                          ),
+                          obscureText: true,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancelar',
+                    style: TextStyle(fontSize: isWeb ? 16 : 14),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _updateEmisor(
+                      emisor['id'],
+                      emailController.text.trim(),
+                      fullNameController.text.trim(),
+                      selectedCarreraIds,
+                      generatePassword,
+                      passwordController.text.trim(),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xff6C4DDC),
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isWeb ? 24 : 20,
+                      vertical: isWeb ? 12 : 10,
+                    ),
+                  ),
+                  child: Text(
+                    'Actualizar',
+                    style: TextStyle(fontSize: isWeb ? 16 : 14),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _updateEmisor(
+    String emisorId,
+    String email,
+    String fullName,
+    Set<String> selectedCarreraIds,
+    bool generatePassword,
+    String password,
+  ) async {
+    if (email.isEmpty || fullName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Por favor completa todos los campos')),
+      );
+      return;
+    }
+
+    if (selectedCarreraIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Por favor selecciona al menos una carrera')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Crear asignaciones basadas en las carreras seleccionadas
+      List<Map<String, dynamic>> assignments = [];
+      
+      if (selectedCarreraIds.contains('all')) {
+        assignments.add({
+          'id': 'general_${DateTime.now().millisecondsSinceEpoch}',
+          'type': 'general',
+          'areaId': 'all',
+          'areaName': 'Todos los estudiantes',
+        });
+      } else {
+        for (final carreraId in selectedCarreraIds) {
+          final carrera = _carreras.firstWhere((c) => c['id'] == carreraId);
+          assignments.add({
+            'id': 'carrera_${carreraId}_${DateTime.now().millisecondsSinceEpoch}',
+            'type': 'carrera',
+            'areaId': carreraId,
+            'areaName': carrera['name'],
+            'parentAreaId': carrera['facultyId'],
+            'parentAreaName': carrera['facultyName'],
+          });
+        }
+      }
+
+      // Preparar datos de actualización
+      Map<String, dynamic> updateData = {
+        'email': email,
+        'fullName': fullName,
+        'emisorType': selectedCarreraIds.contains('all') ? 'general' : 'carrera',
+        'assignments': assignments,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Agregar contraseña si se especificó
+      if (generatePassword) {
+        updateData['password'] = _generateSecurePassword();
+        updateData['mustChangePassword'] = true;
+        updateData['isTemporaryPassword'] = true;
+      } else if (password.isNotEmpty) {
+        updateData['password'] = password;
+        updateData['mustChangePassword'] = true;
+        updateData['isTemporaryPassword'] = false;
+      }
+
+      await _firestore.collection('users').doc(emisorId).update(updateData);
+      
+      await _loadEmisores();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Emisor actualizado exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error actualizando emisor: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error actualizando emisor: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _showCreateEmisorDialog() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWeb = screenWidth > 800;
+    
+    // Variables locales para el diálogo
+    Set<String> selectedCarreraIds = <String>{};
+    bool generatePassword = true;
+    bool sendEmail = true;
+    
+    // Cargar carreras antes de abrir el diálogo
+    _loadCarreras();
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
           title: Text(
             'Crear Nuevo Emisor',
             style: TextStyle(
@@ -350,15 +894,247 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                   ),
                   SizedBox(height: 16),
                   
+                  // Tipo de Emisor
+                  Text(
+                    'Carreras Asignadas',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff2E2F44),
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  
+                  // Opción para seleccionar todas las carreras
+                  Container(
+                    margin: EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: selectedCarreraIds.contains('all') 
+                            ? Color(0xff6C4DDC) 
+                            : Colors.grey[300]!,
+                        width: selectedCarreraIds.contains('all') ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      color: selectedCarreraIds.contains('all') 
+                          ? Color(0xff6C4DDC).withOpacity(0.1)
+                          : Colors.white,
+                    ),
+                    child: InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          if (selectedCarreraIds.contains('all')) {
+                            selectedCarreraIds.clear();
+                          } else {
+                            selectedCarreraIds.clear();
+                            selectedCarreraIds.add('all');
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: selectedCarreraIds.contains('all'),
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    selectedCarreraIds.clear();
+                                    selectedCarreraIds.add('all');
+                                  } else {
+                                    selectedCarreraIds.remove('all');
+                                  }
+                                });
+                              },
+                              activeColor: Color(0xff6C4DDC),
+                            ),
+                            SizedBox(width: 12),
+                            Icon(
+                              Icons.public,
+                              color: selectedCarreraIds.contains('all') 
+                                  ? Color(0xff6C4DDC) 
+                                  : Colors.grey[600],
+                              size: 20,
+                            ),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Todas las carreras',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: selectedCarreraIds.contains('all') 
+                                          ? Color(0xff6C4DDC) 
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Puede emitir certificados a todos los estudiantes',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: selectedCarreraIds.contains('all') 
+                                          ? Color(0xff6C4DDC).withOpacity(0.8)
+                                          : Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  // Lista de carreras individuales
+                  if (!selectedCarreraIds.contains('all')) ...[
+                    Text(
+                      'Selecciona carreras específicas:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xff2E2F44),
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Container(
+                      height: 200,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.builder(
+                        itemCount: _carreras.length,
+                        itemBuilder: (context, index) {
+                          final carrera = _carreras[index];
+                          final carreraId = carrera['id'] as String;
+                          final isSelected = selectedCarreraIds.contains(carreraId);
+                          
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isSelected 
+                                  ? Color(0xff6C4DDC).withOpacity(0.1)
+                                  : Colors.white,
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Colors.grey[200]!,
+                                  width: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: CheckboxListTile(
+                              value: isSelected,
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    selectedCarreraIds.add(carreraId);
+                                  } else {
+                                    selectedCarreraIds.remove(carreraId);
+                                  }
+                                });
+                              },
+                              title: Text(
+                                carrera['name'],
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                  color: isSelected ? Color(0xff6C4DDC) : Colors.black87,
+                                ),
+                              ),
+                                  subtitle: Text(
+                                    'Carrera académica',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                              activeColor: Color(0xff6C4DDC),
+                              controlAffinity: ListTileControlAffinity.leading,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                  
+                  SizedBox(height: 16),
+                  
+                  // Indicador de carreras seleccionadas
+                  if (selectedCarreraIds.isNotEmpty) ...[
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Color(0xff6C4DDC).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: Color(0xff6C4DDC),
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Carreras seleccionadas:',
+                                style: TextStyle(
+                                  color: Color(0xff6C4DDC),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+                          ...selectedCarreraIds.map((carreraId) {
+                            if (carreraId == 'all') {
+                              return Text(
+                                '• Todas las carreras',
+                                style: TextStyle(
+                                  color: Color(0xff6C4DDC),
+                                  fontSize: 12,
+                                ),
+                              );
+                            } else {
+                              final carrera = _carreras.firstWhere(
+                                (c) => c['id'] == carreraId,
+                                orElse: () => {'name': 'Carrera no encontrada'},
+                              );
+                              return Text(
+                                '• ${carrera['name']}',
+                                style: TextStyle(
+                                  color: Color(0xff6C4DDC),
+                                  fontSize: 12,
+                                ),
+                              );
+                            }
+                          }).toList(),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                  ],
+                  
+                  
                   // Opción para generar contraseña automáticamente
                   Row(
                     children: [
                       Checkbox(
-                        value: _generatePassword,
+                        value: generatePassword,
                         onChanged: (value) {
-                          setState(() {
-                            _generatePassword = value ?? true;
-                            if (_generatePassword) {
+                          setDialogState(() {
+                            generatePassword = value ?? true;
+                            if (generatePassword) {
                               _passwordController.clear();
                             }
                           });
@@ -379,10 +1155,10 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                   Row(
                     children: [
                       Checkbox(
-                        value: _sendEmail,
+                        value: sendEmail,
                         onChanged: (value) {
-                          setState(() {
-                            _sendEmail = value ?? true;
+                          setDialogState(() {
+                            sendEmail = value ?? true;
                           });
                         },
                       ),
@@ -396,7 +1172,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                   ),
                   
                   // Campo de contraseña manual (solo si no se genera automáticamente)
-                  if (!_generatePassword) ...[
+                  if (!generatePassword) ...[
                     SizedBox(height: 16),
                     TextField(
                       controller: _passwordController,
@@ -451,7 +1227,11 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _createEmisor();
+                _createEmisorFromDialog(
+                  selectedCarreraIds: selectedCarreraIds,
+                  generatePassword: generatePassword,
+                  sendEmail: sendEmail,
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xff6C4DDC),
@@ -468,8 +1248,158 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
             ),
           ],
         );
+          },
+        );
       },
     );
+  }
+
+  void _createEmisorFromDialog({
+    required Set<String> selectedCarreraIds,
+    required bool generatePassword,
+    required bool sendEmail,
+  }) {
+    // Actualizar las variables del estado del widget
+    setState(() {
+      _selectedCarreraIds = selectedCarreraIds;
+      _generatePassword = generatePassword;
+      _sendEmail = sendEmail;
+    });
+    
+    // Llamar al método original
+    _createEmisor();
+  }
+
+  Widget _buildAssignmentsInfo(Map<String, dynamic> emisor, bool isWeb) {
+    // Obtener asignaciones del emisor
+    final assignments = emisor['assignments'] as List<dynamic>? ?? [];
+    
+    if (assignments.isEmpty) {
+      // Fallback para emisores antiguos sin asignaciones
+      return _buildLegacyEmisorInfo(emisor, isWeb);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Mostrar asignaciones
+        ...assignments.map((assignment) {
+          final assignmentData = assignment as Map<String, dynamic>;
+          final type = assignmentData['type'] as String;
+          final areaName = assignmentData['areaName'] as String;
+          
+          return Container(
+            margin: EdgeInsets.only(bottom: 2),
+            child: Row(
+              children: [
+                Icon(
+                  _getAssignmentIcon(type),
+                  size: isWeb ? 12 : 10,
+                  color: Color(0xff6C4DDC),
+                ),
+                SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _getAssignmentDisplayText(type, areaName),
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: isWeb ? 11 : 9,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildLegacyEmisorInfo(Map<String, dynamic> emisor, bool isWeb) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Información del tipo de emisor
+        Row(
+          children: [
+            Icon(
+              _getEmisorTypeIcon(emisor['emisorType']),
+              size: isWeb ? 16 : 12,
+              color: Color(0xff6C4DDC),
+            ),
+            SizedBox(width: 4),
+            Text(
+              _getEmisorTypeDisplayName(emisor['emisorType']),
+              style: TextStyle(
+                color: Color(0xff6C4DDC),
+                fontSize: isWeb ? 12 : 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        
+        // Información del área asignada
+        if (emisor['carreraName'] != null) ...[
+          SizedBox(height: 2),
+          Text(
+            'Carrera: ${emisor['carreraName']}',
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: isWeb ? 11 : 9,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        
+        if (emisor['facultadName'] != null && emisor['carreraName'] == null) ...[
+          SizedBox(height: 2),
+          Text(
+            'Facultad: ${emisor['facultadName']}',
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: isWeb ? 11 : 9,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+  }
+
+  IconData _getAssignmentIcon(String type) {
+    switch (type) {
+      case 'general':
+        return Icons.public;
+      case 'facultad':
+        return Icons.account_balance;
+      case 'carrera':
+        return Icons.menu_book;
+      case 'programa':
+        return Icons.school;
+      default:
+        return Icons.assignment;
+    }
+  }
+
+  String _getAssignmentDisplayText(String type, String areaName) {
+    switch (type) {
+      case 'general':
+        return 'Todos los estudiantes';
+      case 'facultad':
+        return 'Facultad: $areaName';
+      case 'carrera':
+        return 'Carrera: $areaName';
+      case 'programa':
+        return 'Programa: $areaName';
+      default:
+        return areaName;
+    }
   }
 
   @override
@@ -729,14 +1659,62 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    emisor['fullName'],
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: isWeb ? 18 : 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          emisor['fullName'],
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: isWeb ? 18 : 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Indicador de estado
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (emisor['isActive'] != false) 
+                              ? Colors.green.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: (emisor['isActive'] != false) 
+                                ? Colors.green 
+                                : Colors.orange,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: (emisor['isActive'] != false) 
+                                    ? Colors.green 
+                                    : Colors.orange,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              (emisor['isActive'] != false) ? 'Activo' : 'Suspendido',
+                              style: TextStyle(
+                                color: (emisor['isActive'] != false) 
+                                    ? Colors.green 
+                                    : Colors.orange,
+                                fontSize: isWeb ? 11 : 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   SizedBox(height: isWeb ? 4 : 2),
                   Text(
@@ -748,11 +1726,35 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  SizedBox(height: isWeb ? 4 : 2),
+                  
+                  // Información de asignaciones múltiples
+                  _buildAssignmentsInfo(emisor, isWeb),
                 ],
               ),
             ),
             PopupMenuButton(
               itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit, color: Colors.blue, size: 20),
+                      SizedBox(width: 8),
+                      Text('Editar'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'suspend',
+                  child: Row(
+                    children: [
+                      Icon(Icons.pause_circle, color: Colors.orange, size: 20),
+                      SizedBox(width: 8),
+                      Text(emisor['isActive'] == false ? 'Activar' : 'Suspender'),
+                    ],
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'delete',
                   child: Row(
@@ -765,8 +1767,16 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                 ),
               ],
               onSelected: (value) {
-                if (value == 'delete') {
-                  _deleteEmisor(emisor['id']);
+                switch (value) {
+                  case 'edit':
+                    _editEmisor(emisor);
+                    break;
+                  case 'suspend':
+                    _toggleEmisorStatus(emisor);
+                    break;
+                  case 'delete':
+                    _deleteEmisor(emisor['id']);
+                    break;
                 }
               },
             ),
@@ -774,5 +1784,31 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
         ),
       ),
     );
+  }
+
+  IconData _getEmisorTypeIcon(String? emisorType) {
+    switch (emisorType) {
+      case 'general':
+        return Icons.school;
+      case 'carrera':
+        return Icons.menu_book;
+      case 'facultad':
+        return Icons.account_balance;
+      default:
+        return Icons.school;
+    }
+  }
+
+  String _getEmisorTypeDisplayName(String? emisorType) {
+    switch (emisorType) {
+      case 'general':
+        return 'General';
+      case 'carrera':
+        return 'Por Carrera';
+      case 'facultad':
+        return 'Por Facultad';
+      default:
+        return 'General';
+    }
   }
 }

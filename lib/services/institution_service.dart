@@ -1,6 +1,7 @@
 // lib/services/institution_service.dart
 // Servicio para gestionar instituciones en el sistema multi-tenant
 
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/institution.dart';
 
@@ -14,16 +15,23 @@ class InstitutionService {
     required String shortName,
     required String description,
     required String logoUrl,
+    required String institutionCode,
     required InstitutionColors colors,
     required InstitutionSettings settings,
     required String createdBy,
   }) async {
     try {
+      // Verificar que el código no exista
+      if (await institutionCodeExists(institutionCode)) {
+        throw Exception('El código de institución ya existe');
+      }
+
       final docRef = await _firestore.collection(_collection).add({
         'name': name,
         'shortName': shortName,
         'description': description,
         'logoUrl': logoUrl,
+        'institutionCode': institutionCode,
         'colors': colors.toMap(),
         'settings': settings.toMap(),
         'status': 'active',
@@ -215,6 +223,155 @@ class InstitutionService {
           .toList();
     } catch (e) {
       throw Exception('Error al obtener instituciones por creador: $e');
+    }
+  }
+
+  // Obtener institución por código
+  static Future<Institution?> getInstitutionByCode(String code) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(_collection)
+          .where('institutionCode', isEqualTo: code)
+          .where('status', isEqualTo: 'active')
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final doc = querySnapshot.docs.first;
+        return Institution.fromFirestore(doc.data(), doc.id);
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Error al obtener institución por código: $e');
+    }
+  }
+
+  // Verificar si existe un código de institución
+  static Future<bool> institutionCodeExists(String code) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(_collection)
+          .where('institutionCode', isEqualTo: code)
+          .limit(1)
+          .get();
+
+      return querySnapshot.docs.isNotEmpty;
+    } catch (e) {
+      throw Exception('Error al verificar código de institución: $e');
+    }
+  }
+
+  // Generar código único para institución (10 dígitos numéricos)
+  static Future<String> generateUniqueCode(String shortName) async {
+    try {
+      // Generar código de 10 dígitos aleatorios
+      String code = _generateNumericCode();
+      
+      // Verificar que el código no exista
+      while (await institutionCodeExists(code)) {
+        code = _generateNumericCode();
+      }
+      
+      return code;
+    } catch (e) {
+      throw Exception('Error al generar código único: $e');
+    }
+  }
+
+  // Generar código único para carrera (formato: INSTITUCION-CARRERA-XXX)
+  static Future<String> generateCareerCode(String institutionShortName, String careerName) async {
+    try {
+      // Crear prefijo de la institución (máximo 3 caracteres)
+      String institutionPrefix = institutionShortName.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      if (institutionPrefix.length > 3) {
+        institutionPrefix = institutionPrefix.substring(0, 3);
+      }
+      
+      // Crear prefijo de la carrera (máximo 6 caracteres)
+      String careerPrefix = careerName.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      if (careerPrefix.length > 6) {
+        careerPrefix = careerPrefix.substring(0, 6);
+      }
+      
+      // Generar código: INSTITUCION-CARRERA-XXX
+      String baseCode = '$institutionPrefix-$careerPrefix-';
+      String code = baseCode + _generateNumericCode().substring(0, 3); // Últimos 3 dígitos
+      
+      // Verificar que el código no exista
+      while (await careerCodeExists(code)) {
+        code = baseCode + _generateNumericCode().substring(0, 3);
+      }
+      
+      return code;
+    } catch (e) {
+      throw Exception('Error al generar código de carrera: $e');
+    }
+  }
+
+  // Verificar si existe un código de carrera
+  static Future<bool> careerCodeExists(String code) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('programs')
+          .where('careerCode', isEqualTo: code)
+          .limit(1)
+          .get();
+
+      return querySnapshot.docs.isNotEmpty;
+    } catch (e) {
+      throw Exception('Error al verificar código de carrera: $e');
+    }
+  }
+
+  // Obtener carrera por código (solo activas)
+  static Future<Map<String, dynamic>?> getCareerByCode(String code) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('programs')
+          .where('careerCode', isEqualTo: code)
+          .where('status', isEqualTo: 'active')
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final doc = querySnapshot.docs.first;
+        return {
+          'id': doc.id,
+          ...doc.data(),
+        };
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Error al obtener carrera por código: $e');
+    }
+  }
+
+  // Generar código numérico de 10 dígitos
+  static String _generateNumericCode() {
+    final random = Random.secure();
+    String code = '';
+    
+    // Generar 10 dígitos aleatorios
+    for (int i = 0; i < 10; i++) {
+      code += random.nextInt(10).toString();
+    }
+    
+    return code;
+  }
+
+  // Validar código de institución
+  static Future<bool> validateInstitutionCode(String code) async {
+    try {
+      // Validar formato: debe ser exactamente 10 dígitos numéricos
+      if (!RegExp(r'^\d{10}$').hasMatch(code)) {
+        return false;
+      }
+      
+      // Verificar que la institución existe y está activa
+      final institution = await getInstitutionByCode(code);
+      return institution != null && institution.status == InstitutionStatus.active;
+    } catch (e) {
+      return false;
     }
   }
 }

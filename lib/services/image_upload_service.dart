@@ -190,4 +190,30 @@ class ImageUploadService {
     // Por ahora retornamos la imagen original
     return imageBytes;
   }
+
+  // Subir PDF específicamente - usando EXACTAMENTE el mismo método que emisión de certificados
+  static Future<String> uploadPdfBytes(Uint8List pdfBytes, String path) async {
+    try {
+      print('🔄 Procesando PDF para pasantías (mismo método que certificados)...');
+      print('📊 Tamaño del archivo: ${pdfBytes.length} bytes');
+      
+      // Simular progreso de procesamiento (igual que certificados)
+      await Future.delayed(Duration(milliseconds: 1500));
+      
+      // Convertir bytes a base64 para almacenar (EXACTAMENTE igual que en emisión de certificados)
+      // En certificados se almacena como base64 puro, NO como data URL
+      final String base64String = base64Encode(pdfBytes);
+      
+      print('✅ PDF procesado exitosamente (método certificados)');
+      print('🔗 Base64 generado: ${base64String.substring(0, 100)}...');
+      print('📝 Método: Base64 puro (IDÉNTICO a emisión de certificados)');
+      print('📏 Longitud total: ${base64String.length} caracteres');
+      
+      // Retornar base64 puro, igual que en certificados
+      return base64String;
+    } catch (e) {
+      print('❌ Error al procesar PDF: $e');
+      throw Exception('Error al procesar PDF: $e');
+    }
+  }
 }

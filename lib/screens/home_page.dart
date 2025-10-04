@@ -36,7 +36,7 @@ class _HomePageState extends State<HomePage> {
     }
     
     // Verificar si el usuario necesita cambiar contraseña
-    if (UserContextService.needsPasswordChange()) {
+    if (UserContextService.isInitialized && UserContextService.needsPasswordChange()) {
       print('🔄 REDIRIGIENDO A CAMBIO DE CONTRASEÑA');
       // Redirigir a la pantalla de cambio de contraseña
       WidgetsBinding.instance.addPostFrameCallback((_) {

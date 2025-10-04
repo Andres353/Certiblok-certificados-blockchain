@@ -66,6 +66,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       print('   Usuario: ${currentContext.userEmail}');
       print('   Rol: ${currentContext.userRole}');
       print('   UID: ${currentContext.userId}');
+      print('   InstitutionId: ${currentContext.institutionId}');
 
       // Verificar si es un usuario de Firebase Auth o de Firestore
       final user = FirebaseAuth.instance.currentUser;
@@ -102,21 +103,47 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         print('   ✅ Estado actualizado en Firestore');
         
       } else {
-        // Usuario de Firestore (emisor, student)
+        // Usuario de Firestore (emisor, student, admin_institution)
         print('   🔐 Cambiando contraseña para usuario Firestore...');
         
-        // Verificar contraseña actual en Firestore
-        final docRef = FirebaseFirestore.instance
-            .collection('students')
-            .doc(currentContext.userId);
+        DocumentReference docRef;
+        
+        // Determinar la colección según el rol
+        if (currentContext.userRole == 'admin_institution') {
+          // Admin de institución está en la colección 'institutions'
+          // Usar institutionId como el ID del documento
+          final docId = currentContext.institutionId ?? currentContext.userId;
+          print('   📍 Buscando en institutions con ID: $docId');
+          docRef = FirebaseFirestore.instance
+              .collection('institutions')
+              .doc(docId);
+        } else {
+          // Otros usuarios (emisor, student) están en 'users'
+          print('   📍 Buscando en users con ID: ${currentContext.userId}');
+          docRef = FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentContext.userId);
+        }
         
         final doc = await docRef.get();
+        print('   📄 Documento existe: ${doc.exists}');
         if (!doc.exists) {
+          print('   ❌ Documento no encontrado en Firestore');
+          print('   🔍 Colección: ${currentContext.userRole == 'admin_institution' ? 'institutions' : 'users'}');
+          if (currentContext.userRole == 'admin_institution') {
+            print('   🔍 ID del documento: ${currentContext.institutionId ?? currentContext.userId}');
+          } else {
+            print('   🔍 ID del documento: ${currentContext.userId}');
+          }
           throw Exception('Usuario no encontrado en Firestore');
         }
         
-        final userData = doc.data()!;
-        final currentPassword = userData['password'] as String?;
+        final userData = doc.data()! as Map<String, dynamic>;
+        final currentPassword = userData['password'] as String? ?? userData['adminPassword'] as String?;
+        
+        print('   🔍 Contraseña almacenada: ${currentPassword ?? "null"}');
+        print('   🔍 Contraseña ingresada: ${_currentPasswordController.text.trim()}');
+        print('   🔍 Campos disponibles: ${userData.keys.toList()}');
         
         if (currentPassword != _currentPasswordController.text.trim()) {
           throw Exception('La contraseña actual es incorrecta');
@@ -126,12 +153,25 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
         // Actualizar contraseña en Firestore
         print('   Cambiando contraseña en Firestore...');
-        await docRef.update({
-          'password': _newPasswordController.text.trim(),
-          'mustChangePassword': false,
-          'isTemporaryPassword': false,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        
+        if (currentContext.userRole == 'admin_institution') {
+          // Para admin de institución, actualizar adminPassword
+          await docRef.update({
+            'adminPassword': _newPasswordController.text.trim(),
+            'adminMustChangePassword': false,
+            'adminIsTemporaryPassword': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          // Para otros usuarios, actualizar password
+          await docRef.update({
+            'password': _newPasswordController.text.trim(),
+            'mustChangePassword': false,
+            'isTemporaryPassword': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        
         print('   ✅ Contraseña cambiada exitosamente en Firestore');
       }
 
@@ -166,6 +206,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
         // Navegar directamente al dashboard según el rol
         print('   Redirigiendo al dashboard del rol: ${currentContext.userRole}');
+        print('   ✅ Contraseña cambiada exitosamente - Redirigiendo...');
         _navigateToDashboard(currentContext.userRole);
       }
 
@@ -201,14 +242,15 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   }
 
   void _navigateToDashboard(String role) {
+    print('🚀 NAVEGANDO AL DASHBOARD - Rol: $role');
     switch (role) {
-      case 'SUPER_ADMIN':
+      case 'super_admin':
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => SuperAdminDashboard()),
         );
         break;
-      case 'ADMIN_INSTITUTION':
+      case 'admin_institution':
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => AdminDashboard()),
@@ -226,7 +268,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
           MaterialPageRoute(builder: (context) => StudentDashboard()),
         );
         break;
-      case 'PUBLIC_USER':
+      case 'public_user':
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => PublicDashboard()),

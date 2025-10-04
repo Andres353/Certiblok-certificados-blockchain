@@ -11,6 +11,7 @@ class SampleInstitutions {
     shortName: 'UTF',
     description: 'Universidad líder en tecnología e innovación educativa',
     logoUrl: 'https://via.placeholder.com/200x100/6C4DDC/FFFFFF?text=UTF',
+    institutionCode: 'UTF001',
     colors: InstitutionColors(
       primary: '#6C4DDC',
       secondary: '#8B7DDC',
@@ -52,6 +53,7 @@ class SampleInstitutions {
     shortName: 'CSP',
     description: 'Institución educativa de excelencia académica',
     logoUrl: 'https://via.placeholder.com/200x100/2E8B57/FFFFFF?text=CSP',
+    institutionCode: 'CSP001',
     colors: InstitutionColors(
       primary: '#2E8B57',
       secondary: '#3CB371',
@@ -91,6 +93,7 @@ class SampleInstitutions {
     shortName: 'ITI',
     description: 'Formación técnica especializada para la industria',
     logoUrl: 'https://via.placeholder.com/200x100/DC143C/FFFFFF?text=ITI',
+    institutionCode: 'ITI001',
     colors: InstitutionColors(
       primary: '#DC143C',
       secondary: '#FF6347',

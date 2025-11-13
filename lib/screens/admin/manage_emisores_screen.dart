@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
 import '../../services/user_context_service.dart';
 import '../../services/emisor_notification_service.dart';
+import '../../services/adapters/emisor_adapter.dart';
+import '../../services/alert_service.dart';
 
 class ManageEmisoresScreen extends StatefulWidget {
   @override
@@ -10,7 +11,6 @@ class ManageEmisoresScreen extends StatefulWidget {
 }
 
 class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _institutionController = TextEditingController();
@@ -42,7 +42,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     super.dispose();
   }
 
-  // Generar contraseña segura automáticamente
+  // Generar contraseña segura automáticamente (método local para compatibilidad)
   String _generateSecurePassword() {
     const String lowerCase = 'abcdefghijklmnopqrstuvwxyz';
     const String upperCase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -81,35 +81,19 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
       final userContext = UserContextService.currentContext;
       if (userContext == null || userContext.institutionId == null) {
         print('Error: No se pudo obtener el contexto de usuario o institución');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: No se pudo obtener la información de la institución')),
-        );
+        AlertService.showError(context, 'Error', 'No se pudo obtener la información de la institución');
         return;
       }
 
       print('Cargando emisores para institución: ${userContext.institutionId}');
 
-      QuerySnapshot querySnapshot = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'emisor')
-          .where('institutionId', isEqualTo: userContext.institutionId)
-          .get();
-
-      setState(() {
-        _emisores = querySnapshot.docs
-            .map((doc) => {
-                  'id': doc.id,
-                  ...doc.data() as Map<String, dynamic>,
-                })
-            .toList();
-      });
+      // Usar EmisorAdapter para cargar emisores
+      _emisores = await EmisorAdapter.getEmisoresByInstitution(userContext.institutionId!);
 
       print('Emisores cargados: ${_emisores.length}');
     } catch (e) {
       print('Error cargando emisores: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando emisores: $e')),
-      );
+      AlertService.showError(context, 'Error', 'Error cargando emisores: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -122,19 +106,11 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
       final userContext = UserContextService.currentContext;
       if (userContext?.institutionId == null) return;
 
-      final querySnapshot = await _firestore
-          .collection('programs')
-          .where('institutionId', isEqualTo: userContext!.institutionId)
-          .get();
-
+      // Usar EmisorAdapter para cargar carreras
+      _carreras = await EmisorAdapter.getCarrerasByInstitution(userContext!.institutionId!);
+      
       setState(() {
-        _carreras = querySnapshot.docs
-            .map((doc) => {
-                  'id': doc.id,
-                  ...doc.data(),
-                })
-            .toList()
-          ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+        _carreras.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
       });
     } catch (e) {
       print('Error cargando carreras: $e');
@@ -146,26 +122,20 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     if (_emailController.text.isEmpty ||
         _fullNameController.text.isEmpty ||
         (!_generatePassword && _passwordController.text.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor completa todos los campos')),
-      );
+      AlertService.showError(context, 'Error', 'Por favor completa todos los campos');
       return;
     }
 
     // Validar que se hayan seleccionado carreras
     if (_selectedCarreraIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor selecciona al menos una carrera')),
-      );
+      AlertService.showError(context, 'Error', 'Por favor selecciona al menos una carrera');
       return;
     }
     
     // Validar formato de email
     final email = _emailController.text.trim();
     if (!email.contains('@') || !email.contains('.')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor ingresa un email válido (ej: usuario@dominio.com)')),
-      );
+      AlertService.showError(context, 'Error', 'Por favor ingresa un email válido (ej: usuario@dominio.com)');
       return;
     }
 
@@ -178,74 +148,29 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
       final userContext = UserContextService.currentContext;
       if (userContext == null || userContext.institutionId == null) {
         print('Error: No se pudo obtener el contexto de usuario o institución');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: No se pudo obtener la información de la institución')),
-        );
-        return;
-      }
-
-      // Verificar si el email ya existe
-      QuerySnapshot existingUser = await _firestore
-          .collection('users')
-          .where('email', isEqualTo: _emailController.text.trim())
-          .get();
-
-      if (existingUser.docs.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('El email ya está registrado')),
-        );
+        AlertService.showError(context, 'Error', 'No se pudo obtener la información de la institución');
         return;
       }
 
       print('Creando emisor para institución: ${userContext.institutionId}');
 
-      // Generar o usar contraseña
-      String password = _generatePassword 
-          ? _generateSecurePassword() 
-          : _passwordController.text.trim();
+      // Usar EmisorAdapter para crear emisor
+      final result = await EmisorAdapter.createEmisor(
+        email: _emailController.text.trim(),
+        fullName: _fullNameController.text.trim(),
+        institutionId: userContext.institutionId!,
+        institutionName: userContext.currentInstitution?.name ?? 'Institución',
+        selectedCarreraIds: _selectedCarreraIds,
+        carreras: _carreras,
+        generatePassword: _generatePassword,
+        customPassword: _generatePassword ? null : _passwordController.text.trim(),
+      );
 
-      // Crear asignaciones basadas en las carreras seleccionadas
-      List<Map<String, dynamic>> assignments = [];
-      
-      if (_selectedCarreraIds.contains('all')) {
-        // Emisor general - puede emitir a todos los estudiantes
-        assignments.add({
-          'id': 'general_${DateTime.now().millisecondsSinceEpoch}',
-          'type': 'general',
-          'areaId': 'all',
-          'areaName': 'Todos los estudiantes',
-        });
-      } else {
-        // Emisor específico - solo a las carreras seleccionadas
-        for (final carreraId in _selectedCarreraIds) {
-          final carrera = _carreras.firstWhere((c) => c['id'] == carreraId);
-          assignments.add({
-            'id': 'carrera_${carreraId}_${DateTime.now().millisecondsSinceEpoch}',
-            'type': 'carrera',
-            'areaId': carreraId,
-            'areaName': carrera['name'],
-            'parentAreaId': carrera['facultyId'],
-            'parentAreaName': carrera['facultyName'],
-          });
-        }
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Error desconocido');
       }
 
-      // Crear nuevo emisor
-      await _firestore.collection('users').add({
-        'email': _emailController.text.trim(),
-        'fullName': _fullNameController.text.trim(),
-        'password': password,
-        'role': 'emisor',
-        'institutionId': userContext.institutionId,
-        'institutionName': userContext.currentInstitution?.name ?? 'Institución',
-        'emisorType': _selectedCarreraIds.contains('all') ? 'general' : 'carrera',
-        'assignments': assignments, // Nuevo campo para asignaciones múltiples
-        'isVerified': true,
-        'mustChangePassword': true, // SIEMPRE debe cambiar contraseña en el primer login
-        'isTemporaryPassword': _generatePassword, // Solo es temporal si se generó automáticamente
-        'createdAt': FieldValue.serverTimestamp(),
-        'verificationCode': '000000', // Código por defecto
-      });
+      final password = result['password'] as String;
 
       // Enviar email con credenciales si está habilitado (ANTES de limpiar campos)
       if (_sendEmail) {
@@ -272,26 +197,11 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
           print('❌ Error enviando email: ${emailResult['message']}');
         }
         
-        // Mostrar credenciales en SnackBar si están disponibles
+        // Mostrar credenciales si están disponibles
         if (emailResult['credentials'] != null) {
           final creds = emailResult['credentials'];
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Credenciales del Emisor:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  SizedBox(height: 4),
-                  Text('Email: ${creds['email']}'),
-                  Text('Contraseña: ${creds['password']}'),
-                  Text('Nombre: ${creds['fullName']}'),
-                ],
-              ),
-              backgroundColor: Colors.blue,
-              duration: Duration(seconds: 10),
-            ),
-          );
+          final credsMessage = 'Credenciales del Emisor:\n\nEmail: ${creds['email']}\nContraseña: ${creds['password']}\nNombre: ${creds['fullName']}';
+          AlertService.showSuccess(context, 'Credenciales', credsMessage);
         }
       }
 
@@ -314,18 +224,10 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
             : '\nNotificación enviada por email.';
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 8), // Más tiempo para leer la contraseña
-        ),
-      );
+      AlertService.showSuccess(context, 'Éxito', message);
     } catch (e) {
       print('Error creando emisor: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error creando emisor: $e')),
-      );
+      AlertService.showError(context, 'Error', 'Error creando emisor: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -357,22 +259,18 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
 
     if (confirm) {
       try {
-        await _firestore.collection('users').doc(emisorId).delete();
+        await EmisorAdapter.deleteEmisor(emisorId);
         await _loadEmisores();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Emisor eliminado exitosamente')),
-        );
+        AlertService.showSuccess(context, 'Éxito', 'Emisor eliminado exitosamente');
       } catch (e) {
         print('Error eliminando emisor: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error eliminando emisor: $e')),
-        );
+        AlertService.showError(context, 'Error', 'Error eliminando emisor: $e');
       }
     }
   }
 
   Future<void> _toggleEmisorStatus(Map<String, dynamic> emisor) async {
-    final isCurrentlyActive = emisor['isActive'] != false;
+    final isCurrentlyActive = emisor['is_active'] != false;
     final action = isCurrentlyActive ? 'suspender' : 'activar';
     
     bool confirm = await showDialog(
@@ -400,24 +298,18 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
 
     if (confirm) {
       try {
-        await _firestore.collection('users').doc(emisor['id']).update({
-          'isActive': !isCurrentlyActive,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        await EmisorAdapter.toggleEmisorStatus(emisor['id'], !isCurrentlyActive);
         
         await _loadEmisores();
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Emisor ${action == 'suspender' ? 'suspendido' : 'activado'} exitosamente'),
-            backgroundColor: action == 'suspender' ? Colors.orange : Colors.green,
-          ),
+        AlertService.showSuccess(
+          context, 
+          'Éxito', 
+          'Emisor ${action == 'suspender' ? 'suspendido' : 'activado'} exitosamente'
         );
       } catch (e) {
         print('Error ${action} emisor: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error ${action} emisor: $e')),
-        );
+        AlertService.showError(context, 'Error', 'Error ${action} emisor: $e');
       }
     }
   }
@@ -427,13 +319,15 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     final isWeb = screenWidth > 800;
     
     // Controladores para el formulario de edición
-    final emailController = TextEditingController(text: emisor['email']);
-    final fullNameController = TextEditingController(text: emisor['fullName']);
+    final emailController = TextEditingController(text: emisor['email'] ?? '');
+    final fullNameController = TextEditingController(
+      text: emisor['full_name'] ?? emisor['fullName'] ?? ''
+    );
     final passwordController = TextEditingController();
     
     // Variables para el estado del diálogo
     Set<String> selectedCarreraIds = <String>{};
-    bool generatePassword = true;
+    String passwordOption = 'none'; // 'none', 'generate', 'custom'
     
     // Cargar asignaciones actuales
     final assignments = emisor['assignments'] ?? [];
@@ -662,31 +556,185 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                       
                       SizedBox(height: 16),
                       
-                      // Opción para cambiar contraseña
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: generatePassword,
-                            onChanged: (value) {
-                              setDialogState(() {
-                                generatePassword = value ?? true;
-                                if (generatePassword) {
-                                  passwordController.clear();
-                                }
-                              });
-                            },
+                      // Opciones para cambiar contraseña
+                      Text(
+                        'Cambiar Contraseña',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      
+                      // Opción 1: No cambiar contraseña
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: passwordOption == 'none' 
+                                ? Color(0xff6C4DDC) 
+                                : Colors.grey[300]!,
+                            width: passwordOption == 'none' ? 2 : 1,
                           ),
-                          Expanded(
-                            child: Text(
-                              'Generar nueva contraseña',
-                              style: TextStyle(fontSize: 14),
+                          borderRadius: BorderRadius.circular(8),
+                          color: passwordOption == 'none' 
+                              ? Color(0xff6C4DDC).withOpacity(0.1)
+                              : Colors.white,
+                        ),
+                        child: InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              passwordOption = 'none';
+                              passwordController.clear();
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                Radio<String>(
+                                  value: 'none',
+                                  groupValue: passwordOption,
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      passwordOption = value ?? 'none';
+                                      passwordController.clear();
+                                    });
+                                  },
+                                  activeColor: Color(0xff6C4DDC),
+                                ),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Mantener contraseña actual',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: passwordOption == 'none' 
+                                          ? FontWeight.w600 
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
+                        ),
                       ),
                       
-                      // Campo de contraseña manual (solo si no se genera automáticamente)
-                      if (!generatePassword) ...[
+                      // Opción 2: Generar contraseña automáticamente
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: passwordOption == 'generate' 
+                                ? Color(0xff6C4DDC) 
+                                : Colors.grey[300]!,
+                            width: passwordOption == 'generate' ? 2 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          color: passwordOption == 'generate' 
+                              ? Color(0xff6C4DDC).withOpacity(0.1)
+                              : Colors.white,
+                        ),
+                        child: InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              passwordOption = 'generate';
+                              passwordController.clear();
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                Radio<String>(
+                                  value: 'generate',
+                                  groupValue: passwordOption,
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      passwordOption = value ?? 'generate';
+                                      passwordController.clear();
+                                    });
+                                  },
+                                  activeColor: Color(0xff6C4DDC),
+                                ),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Generar nueva contraseña automáticamente',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: passwordOption == 'generate' 
+                                          ? FontWeight.w600 
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Opción 3: Contraseña personalizada
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: passwordOption == 'custom' 
+                                ? Color(0xff6C4DDC) 
+                                : Colors.grey[300]!,
+                            width: passwordOption == 'custom' ? 2 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          color: passwordOption == 'custom' 
+                              ? Color(0xff6C4DDC).withOpacity(0.1)
+                              : Colors.white,
+                        ),
+                        child: InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              passwordOption = 'custom';
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                Radio<String>(
+                                  value: 'custom',
+                                  groupValue: passwordOption,
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      passwordOption = value ?? 'custom';
+                                    });
+                                  },
+                                  activeColor: Color(0xff6C4DDC),
+                                ),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Ingresar contraseña personalizada',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: passwordOption == 'custom' 
+                                          ? FontWeight.w600 
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Campo de contraseña manual (solo si se selecciona opción personalizada)
+                      if (passwordOption == 'custom') ...[
                         SizedBox(height: 16),
                         TextField(
                           controller: passwordController,
@@ -721,7 +769,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                       emailController.text.trim(),
                       fullNameController.text.trim(),
                       selectedCarreraIds,
-                      generatePassword,
+                      passwordOption,
                       passwordController.text.trim(),
                     );
                   },
@@ -751,20 +799,22 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     String email,
     String fullName,
     Set<String> selectedCarreraIds,
-    bool generatePassword,
+    String passwordOption, // 'none', 'generate', 'custom'
     String password,
   ) async {
     if (email.isEmpty || fullName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor completa todos los campos')),
-      );
+      AlertService.showError(context, 'Error', 'Por favor completa todos los campos');
       return;
     }
 
     if (selectedCarreraIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor selecciona al menos una carrera')),
-      );
+      AlertService.showError(context, 'Error', 'Por favor selecciona al menos una carrera');
+      return;
+    }
+
+    // Validar contraseña personalizada si se seleccionó esa opción
+    if (passwordOption == 'custom' && password.isEmpty) {
+      AlertService.showError(context, 'Error', 'Por favor ingresa una contraseña o selecciona otra opción');
       return;
     }
 
@@ -773,65 +823,28 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
     });
 
     try {
-      // Crear asignaciones basadas en las carreras seleccionadas
-      List<Map<String, dynamic>> assignments = [];
-      
-      if (selectedCarreraIds.contains('all')) {
-        assignments.add({
-          'id': 'general_${DateTime.now().millisecondsSinceEpoch}',
-          'type': 'general',
-          'areaId': 'all',
-          'areaName': 'Todos los estudiantes',
-        });
-      } else {
-        for (final carreraId in selectedCarreraIds) {
-          final carrera = _carreras.firstWhere((c) => c['id'] == carreraId);
-          assignments.add({
-            'id': 'carrera_${carreraId}_${DateTime.now().millisecondsSinceEpoch}',
-            'type': 'carrera',
-            'areaId': carreraId,
-            'areaName': carrera['name'],
-            'parentAreaId': carrera['facultyId'],
-            'parentAreaName': carrera['facultyName'],
-          });
-        }
+      // Usar EmisorAdapter para actualizar emisor
+      final result = await EmisorAdapter.updateEmisor(
+        emisorId: emisorId,
+        email: email,
+        fullName: fullName,
+        selectedCarreraIds: selectedCarreraIds,
+        carreras: _carreras,
+        generatePassword: passwordOption == 'generate',
+        customPassword: passwordOption == 'custom' ? password : null,
+        keepPassword: passwordOption == 'none',
+      );
+
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Error desconocido');
       }
-
-      // Preparar datos de actualización
-      Map<String, dynamic> updateData = {
-        'email': email,
-        'fullName': fullName,
-        'emisorType': selectedCarreraIds.contains('all') ? 'general' : 'carrera',
-        'assignments': assignments,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      // Agregar contraseña si se especificó
-      if (generatePassword) {
-        updateData['password'] = _generateSecurePassword();
-        updateData['mustChangePassword'] = true;
-        updateData['isTemporaryPassword'] = true;
-      } else if (password.isNotEmpty) {
-        updateData['password'] = password;
-        updateData['mustChangePassword'] = true;
-        updateData['isTemporaryPassword'] = false;
-      }
-
-      await _firestore.collection('users').doc(emisorId).update(updateData);
       
       await _loadEmisores();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Emisor actualizado exitosamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AlertService.showSuccess(context, 'Éxito', 'Emisor actualizado exitosamente');
     } catch (e) {
       print('Error actualizando emisor: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error actualizando emisor: $e')),
-      );
+      AlertService.showError(context, 'Error', 'Error actualizando emisor: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -1605,17 +1618,39 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
   }
 
   Widget _buildWebEmisoresList() {
-    return GridView.builder(
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 2.5,
-      ),
-      itemCount: _emisores.length,
-      itemBuilder: (context, index) {
-        final emisor = _emisores[index];
-        return _buildEmisorCard(emisor, true);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calcular número de columnas basado en el ancho disponible
+        int crossAxisCount;
+        double childAspectRatio;
+        
+        if (constraints.maxWidth > 1600) {
+          crossAxisCount = 4;
+          childAspectRatio = 2.8;
+        } else if (constraints.maxWidth > 1200) {
+          crossAxisCount = 3;
+          childAspectRatio = 2.6;
+        } else if (constraints.maxWidth > 900) {
+          crossAxisCount = 2;
+          childAspectRatio = 2.4;
+        } else {
+          crossAxisCount = 1;
+          childAspectRatio = 3.0;
+        }
+        
+        return GridView.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: childAspectRatio,
+          ),
+          itemCount: _emisores.length,
+          itemBuilder: (context, index) {
+            final emisor = _emisores[index];
+            return _buildEmisorCard(emisor, true);
+          },
+        );
       },
     );
   }
@@ -1645,7 +1680,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
               radius: isWeb ? 30 : 20,
               backgroundColor: Color(0xff6C4DDC),
               child: Text(
-                emisor['fullName'][0].toUpperCase(),
+                (emisor['full_name'] ?? emisor['fullName'] ?? 'U')[0].toUpperCase(),
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -1663,7 +1698,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          emisor['fullName'],
+                          emisor['full_name'] ?? emisor['fullName'] ?? 'Sin nombre',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: isWeb ? 18 : 14,
@@ -1676,12 +1711,12 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                       Container(
                         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: (emisor['isActive'] != false) 
+                          color: (emisor['is_active'] != false) 
                               ? Colors.green.withOpacity(0.1)
                               : Colors.orange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: (emisor['isActive'] != false) 
+                            color: (emisor['is_active'] != false) 
                                 ? Colors.green 
                                 : Colors.orange,
                             width: 1,
@@ -1694,7 +1729,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                               width: 6,
                               height: 6,
                               decoration: BoxDecoration(
-                                color: (emisor['isActive'] != false) 
+                                color: (emisor['is_active'] != false) 
                                     ? Colors.green 
                                     : Colors.orange,
                                 shape: BoxShape.circle,
@@ -1702,9 +1737,9 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                             ),
                             SizedBox(width: 4),
                             Text(
-                              (emisor['isActive'] != false) ? 'Activo' : 'Suspendido',
+                              (emisor['is_active'] != false) ? 'Activo' : 'Suspendido',
                               style: TextStyle(
-                                color: (emisor['isActive'] != false) 
+                                color: (emisor['is_active'] != false) 
                                     ? Colors.green 
                                     : Colors.orange,
                                 fontSize: isWeb ? 11 : 9,
@@ -1751,7 +1786,7 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                     children: [
                       Icon(Icons.pause_circle, color: Colors.orange, size: 20),
                       SizedBox(width: 8),
-                      Text(emisor['isActive'] == false ? 'Activar' : 'Suspender'),
+                      Text(emisor['is_active'] == false ? 'Activar' : 'Suspender'),
                     ],
                   ),
                 ),

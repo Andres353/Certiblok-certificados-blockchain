@@ -2,9 +2,10 @@
 // Pantalla para gestionar certificados emitidos
 
 import 'package:flutter/material.dart';
-import '../../services/certificate_service.dart';
+import '../../services/adapters/certificate_adapter.dart';
 import '../../services/user_context_service.dart';
 import '../../services/alert_service.dart';
+import '../../models/certificate.dart';
 import 'certificate_detail_screen.dart';
 
 class MyCertificatesScreen extends StatefulWidget {
@@ -49,11 +50,26 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
         throw Exception('Usuario no autenticado');
       }
 
-      // Obtener certificados del estudiante actual
-      final certificates = await CertificateService.getCertificates(
-        studentId: userContext!.userId,
-        status: _selectedFilter == 'all' ? null : _selectedFilter,
-      );
+      List<Certificate> certificates;
+      
+      // Determinar si es emisor o estudiante
+      final isEmisor = userContext!.userRole == 'emisor';
+      
+      if (isEmisor) {
+        // Para emisores: obtener todos los certificados de la institución
+        print('🔍 Cargando certificados para emisor de institución: ${userContext.institutionId}');
+        certificates = (await CertificateAdapter.getCertificates(
+          institutionId: userContext.institutionId,
+        )).cast<Certificate>();
+        print('📋 Certificados encontrados para emisor: ${certificates.length}');
+      } else {
+        // Para estudiantes: obtener solo sus certificados
+        print('🔍 Cargando certificados para estudiante: ${userContext.userId}');
+        certificates = (await CertificateAdapter.getCertificates(
+          studentId: userContext.userId,
+        )).cast<Certificate>();
+        print('📋 Certificados encontrados para estudiante: ${certificates.length}');
+      }
 
       setState(() {
         _certificates = certificates;
@@ -61,6 +77,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
+      print('❌ Error cargando certificados: $e');
       AlertService.showError(context, 'Error', 'Error cargando certificados: $e');
     }
   }
@@ -83,7 +100,11 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Mis Certificados'),
+        title: Text(
+          UserContextService.currentContext?.userRole == 'emisor' 
+            ? 'Certificados Emitidos' 
+            : 'Mis Certificados'
+        ),
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         actions: [
@@ -213,178 +234,266 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
   }
 
   Widget _buildCertificatesList() {
-    return ListView.builder(
-      padding: EdgeInsets.all(16),
-      itemCount: _filteredCertificates.length,
-      itemBuilder: (context, index) {
-        final certificate = _filteredCertificates[index];
-        return _buildCertificateCard(certificate);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calcular número de columnas para ajustar a la pantalla (igual que dashboard principal)
+        int crossAxisCount;
+        double childAspectRatio;
+        
+        // Calcular el espacio disponible
+        final availableWidth = constraints.maxWidth;
+        
+        if (availableWidth > 1400) {
+          crossAxisCount = 4;
+          childAspectRatio = 1.6; // Más anchos y menos altos
+        } else if (availableWidth > 1000) {
+          crossAxisCount = 3;
+          childAspectRatio = 1.5; // Más anchos y menos altos
+        } else if (availableWidth > 700) {
+          crossAxisCount = 2;
+          childAspectRatio = 1.6; // Más anchos y menos altos
+        } else {
+          crossAxisCount = 1;
+          childAspectRatio = 3.0; // Más anchos y menos altos
+        }
+        
+        return GridView.builder(
+          padding: EdgeInsets.all(16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: childAspectRatio,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: _filteredCertificates.length,
+          itemBuilder: (context, index) {
+            final certificate = _filteredCertificates[index];
+            return _buildCertificateCard(certificate);
+          },
+        );
       },
     );
   }
 
   Widget _buildCertificateCard(Certificate certificate) {
     return Card(
-      margin: EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: () => _viewCertificate(certificate),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header con estado
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      certificate.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xff2E2F44),
-                      ),
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.white, // Color sólido sin degradado
+        ),
+        child: InkWell(
+          onTap: () => _viewCertificate(certificate),
+          borderRadius: BorderRadius.circular(16),
+            child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                
+                // Título del certificado
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Color(0xff6C4DDC).withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      width: 1,
                     ),
                   ),
-                  _buildStatusChip(certificate.status),
-                ],
-              ),
-              
-              SizedBox(height: 8),
-              
-              // Descripción del certificado
-              if (certificate.description.isNotEmpty)
+                  child: Text(
+                    certificate.title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff2E2F44),
+                      height: 1.2,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                
+                SizedBox(height: 12),
+                
+                // Información en badges
                 Row(
                   children: [
-                    Icon(Icons.description, size: 16, color: Colors.grey[600]),
-                    SizedBox(width: 8),
+                    // Estado
                     Expanded(
-                      child: Text(
-                        certificate.description,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(certificate.status).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _getStatusColor(certificate.status).withOpacity(0.3),
+                            width: 1,
+                          ),
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        child: Text(
+                          _getStatusText(certificate.status),
+                          style: TextStyle(
+                            color: _getStatusColor(certificate.status),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                    
+                    SizedBox(width: 6),
+                    
+                    // Tipo de certificado
+                    Expanded(
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Color(0xff6C4DDC).withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          _getCertificateTypeLabel(certificate.certificateType),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xff6C4DDC),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              
-              if (certificate.description.isNotEmpty)
-                SizedBox(height: 4),
-              
-              // Tipo de certificado
-              Row(
-                children: [
-                  Icon(Icons.workspace_premium, size: 16, color: Colors.grey[600]),
-                  SizedBox(width: 8),
-                  Text(
-                    _getCertificateTypeLabel(certificate.certificateType),
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                    ),
+                
+                SizedBox(height: 12),
+                
+                // Información de institución
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[200]!),
                   ),
-                ],
-              ),
-              
-              SizedBox(height: 4),
-              
-              // Fecha de emisión
-              Row(
-                children: [
-                  Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
-                  SizedBox(width: 8),
-                  Text(
-                    'Emitido: ${_formatDate(certificate.issuedAt)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                ],
-              ),
-              
-              SizedBox(height: 12),
-              
-              // Acciones
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _viewCertificate(certificate),
-                      icon: Icon(Icons.visibility, size: 16),
-                      label: Text('Ver'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Color(0xff6C4DDC),
-                        side: BorderSide(color: Color(0xff6C4DDC)),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  if (certificate.status == 'active')
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _shareCertificate(certificate),
-                        icon: Icon(Icons.share, size: 16),
-                        label: Text('Compartir'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.green,
-                          side: BorderSide(color: Colors.green),
+                  child: Row(
+                    children: [
+                      Icon(Icons.school, size: 14, color: Colors.grey[600]),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          certificate.institutionName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                
+                SizedBox(height: 6),
+                
+                // Fecha de emisión
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _formatDate(certificate.issuedAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                SizedBox(height: 12),
+                
+                // Botón de acción principal
+                Container(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _viewCertificate(certificate),
+                    icon: Icon(Icons.visibility, size: 14),
+                    label: Text('Ver Información'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xff6C4DDC),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 2,
                     ),
-                ],
-              ),
-            ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStatusChip(String status) {
-    Color color;
-    String label;
-    
-    switch (status) {
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
       case 'active':
-        color = Colors.green;
-        label = 'Activo';
-        break;
+        return Colors.green;
       case 'revoked':
-        color = Colors.red;
-        label = 'Revocado';
-        break;
+        return Colors.red;
       case 'expired':
-        color = Colors.orange;
-        label = 'Expirado';
-        break;
+        return Colors.orange;
       default:
-        color = Colors.grey;
-        label = 'Desconocido';
+        return Colors.grey;
     }
-    
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
   }
+
+  String _getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return 'ACTIVO';
+      case 'revoked':
+        return 'REVOCADO';
+      case 'expired':
+        return 'EXPIRADO';
+      default:
+        return 'DESCONOCIDO';
+    }
+  }
+
+
+
 
   String _getCertificateTypeLabel(String type) {
     switch (type) {
@@ -414,60 +523,9 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
     );
   }
 
-  void _shareCertificate(Certificate certificate) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Compartir Certificado'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Título: ${certificate.title}'),
-            Text('Tipo: ${_getCertificateTypeLabel(certificate.certificateType)}'),
-            SizedBox(height: 16),
-            Text('Opciones de compartir:'),
-            SizedBox(height: 8),
-            ListTile(
-              leading: Icon(Icons.qr_code),
-              title: Text('Código QR'),
-              subtitle: Text('Generar código QR para compartir'),
-              onTap: () {
-                Navigator.pop(context);
-                _showComingSoon('Código QR');
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.link),
-              title: Text('Enlace Público'),
-              subtitle: Text('Generar enlace para compartir'),
-              onTap: () {
-                Navigator.pop(context);
-                _showComingSoon('Enlace Público');
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.download),
-              title: Text('Descargar PDF'),
-              subtitle: Text('Descargar como archivo PDF'),
-              onTap: () {
-                Navigator.pop(context);
-                _showComingSoon('Descargar PDF');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
+  // Los estudiantes NO pueden revocar certificados
+  // Esta funcionalidad está disponible solo para administradores y emisores
 
-  void _showComingSoon(String feature) {
-    AlertService.showInfo(context, 'Próximamente', '$feature estará disponible próximamente');
-  }
 }
+
+

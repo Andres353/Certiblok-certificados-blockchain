@@ -1,0 +1,9 @@
+Credenciales del Super Admin:
+📧 Email: admin@certiblock.com
+🔑 Password: AdminPassword123!
+🎭 Rol: super_admin
+🔐 Hash: bcrypt (encriptado)
+👤 Usuario de Prueba También Disponible:
+📧 Email: test@certiblock.com
+🔑 Password: TestPassword123!
+🎭 Rol: student

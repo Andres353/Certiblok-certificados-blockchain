@@ -3,7 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../../models/institution.dart';
-import '../../services/institution_service.dart';
+import '../../services/adapters/institution_adapter.dart';
 import '../../services/student_institution_service.dart';
 import '../../services/user_context_service.dart';
 
@@ -48,7 +48,7 @@ class _AddInstitutionScreenState extends State<AddInstitutionScreen> {
     });
 
     try {
-      final institution = await InstitutionService.getInstitutionByCode(
+      final institution = await InstitutionAdapter.getInstitutionByCode(
         _codeController.text.trim().toUpperCase(),
       );
 

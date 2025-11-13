@@ -160,8 +160,19 @@ class CertificateService {
 
   // Generar código QR para validación
   static String _generateQRCode(String certificateId, String institutionCode) {
-    // URL de validación pública
-    return 'https://certiblock.com/validate/$certificateId';
+    // Detectar el puerto automáticamente basado en la URL actual
+    final currentUrl = Uri.base.toString();
+    String port = '8081'; // Puerto por defecto
+    
+    if (currentUrl.contains(':8080')) {
+      port = '8080';
+    } else if (currentUrl.contains(':8081')) {
+      port = '8081';
+    } else if (currentUrl.contains(':8082')) {
+      port = '8082';
+    }
+    
+    return 'http://localhost:$port/#/verify/certificate/$certificateId';
   }
 
   // Crear nuevo certificado con validación de permisos mejorada

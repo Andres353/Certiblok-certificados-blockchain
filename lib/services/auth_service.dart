@@ -16,6 +16,10 @@ class AuthService {
     required String password,
     required String fullName,
     required String studentId,
+    String? phone,
+    String? document,
+    String? birthDate,
+    String? address,
   }) async {
     try {
       // Verificar si el email ya existe
@@ -39,6 +43,10 @@ class AuthService {
         'fullName': fullName.trim(),
         'studentId': studentId.trim(),
         'role': 'student',
+        'phone': phone?.trim(),
+        'document': document?.trim(),
+        'birthDate': birthDate?.trim(),
+        'address': address?.trim(),
         'isVerified': true,
         'mustChangePassword': false,
         'isTemporaryPassword': false,

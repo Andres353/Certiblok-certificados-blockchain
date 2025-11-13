@@ -32,6 +32,28 @@ class Institution {
     required this.createdBy,
   });
 
+  // Constructor desde Supabase
+  factory Institution.fromSupabase(Map<String, dynamic> data) {
+    return Institution(
+      id: data['id'] ?? '',
+      name: data['name'] ?? '',
+      shortName: data['short_name'] ?? '',
+      description: data['description'] ?? '',
+      logoUrl: data['logo_url'] ?? '',
+      institutionCode: data['institution_code'] ?? '',
+      colors: InstitutionColors.fromMap(data['colors'] ?? {}),
+      settings: InstitutionSettings.fromMap(data['settings'] ?? {}),
+      status: InstitutionStatus.fromString(data['status'] ?? 'active'),
+      createdAt: data['created_at'] != null 
+          ? DateTime.parse(data['created_at'])
+          : DateTime.now(),
+      updatedAt: data['updated_at'] != null 
+          ? DateTime.parse(data['updated_at'])
+          : DateTime.now(),
+      createdBy: data['created_by'] ?? '',
+    );
+  }
+
   // Constructor desde Firestore
   factory Institution.fromFirestore(Map<String, dynamic> data, String id) {
     return Institution(
@@ -58,16 +80,14 @@ class Institution {
   Map<String, dynamic> toFirestore() {
     return {
       'name': name,
-      'shortName': shortName,
+      'short_name': shortName,
       'description': description,
-      'logoUrl': logoUrl,
-      'institutionCode': institutionCode,
+      'logo_url': logoUrl,
+      'institution_code': institutionCode,
       'colors': colors.toMap(),
       'settings': settings.toMap(),
       'status': status.toString(),
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
-      'createdBy': createdBy,
+      'created_by': createdBy,
     };
   }
 

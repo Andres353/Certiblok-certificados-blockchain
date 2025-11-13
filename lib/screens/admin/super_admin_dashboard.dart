@@ -3,12 +3,15 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../services/institution_service.dart';
+import '../../services/adapters/institution_adapter.dart';
+import '../../services/adapters/institution_request_adapter.dart';
 import '../../services/alert_service.dart';
 import '../../models/institution.dart';
 import 'institution_management_screen.dart';
 import 'institution_requests_screen.dart';
+import 'page_editor_screen.dart';
+import 'reports_screen.dart';
+import 'blockchain_wallet_setup_screen.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   @override
@@ -38,20 +41,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     setState(() => _isLoading = true);
     
     try {
-      // Cargar SOLO las instituciones reales de Firebase
-      final allInstitutions = await InstitutionService.getAllInstitutions();
+      // Cargar instituciones desde Supabase
+      final allInstitutions = await InstitutionAdapter.getAllInstitutions();
       
-      print('🔍 Cargando instituciones desde Firebase:');
+      print('🔍 Cargando instituciones desde Supabase:');
       print('   - Total encontradas: ${allInstitutions.length}');
       
       _institutions = allInstitutions;
       
-      // Calcular estadísticas reales
+      // Calcular estadísticas reales de instituciones
       int total = allInstitutions.length;
       int active = 0;
       int inactive = 0;
       int suspended = 0;
-      int pending = 0;
 
       for (var institution in allInstitutions) {
         switch (institution.status) {
@@ -65,9 +67,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             suspended++;
             break;
           case InstitutionStatus.pending:
-            pending++;
+            // Las instituciones pendientes no se cuentan aquí
             break;
         }
+      }
+
+      // Cargar estadísticas de solicitudes pendientes
+      int pendingRequests = 0;
+      try {
+        final requestStats = await InstitutionRequestAdapter.getRequestStats();
+        pendingRequests = requestStats['pending'] ?? 0;
+        print('📋 Solicitudes pendientes: $pendingRequests');
+      } catch (e) {
+        print('⚠️ Error cargando estadísticas de solicitudes: $e');
       }
 
       _stats = {
@@ -75,11 +87,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         'active': active,
         'inactive': inactive,
         'suspended': suspended,
-        'pending': pending,
+        'pending': pendingRequests, // Usar solicitudes pendientes en lugar de instituciones pendientes
       };
       
       print('✅ Datos reales cargados:');
       print('   - Instituciones: ${_institutions.length}');
+      print('   - Solicitudes pendientes: $pendingRequests');
       print('   - Estadísticas: $_stats');
       
     } catch (e) {
@@ -91,6 +104,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     
     setState(() => _isLoading = false);
   }
+
 
   Future<void> _forceRefresh() async {
     print('🔄 Forzando actualización completa...');
@@ -111,37 +125,31 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     // Reconfigurar suscripción
     _setupRealtimeUpdates();
     
-    AlertService.showSuccess(context, 'Éxito', 'Datos actualizados desde Firebase');
+    AlertService.showSuccess(context, 'Éxito', 'Datos actualizados desde Supabase');
   }
 
   void _setupRealtimeUpdates() {
-    // Escuchar cambios en tiempo real en la colección de instituciones
-    _institutionsSubscription = FirebaseFirestore.instance
-        .collection('institutions')
-        .snapshots()
-        .listen((snapshot) {
-      print('🔄 Actualización detectada en Firebase');
-      print('   - Documentos encontrados: ${snapshot.docs.length}');
+    // Cargar instituciones desde Supabase
+    _loadInstitutionsFromSupabase();
+  }
+
+  Future<void> _loadInstitutionsFromSupabase() async {
+    try {
+      print('🔄 Cargando instituciones desde Supabase...');
       
-      final institutions = snapshot.docs
-          .map((doc) {
-            print('   - Procesando documento: ${doc.id}');
-            print('   - Datos: ${doc.data()}');
-            return Institution.fromFirestore(doc.data(), doc.id);
-          })
-          .toList();
+      // Cargar instituciones usando InstitutionAdapter
+      final institutions = await InstitutionAdapter.getAllInstitutions();
       
       print('📋 Instituciones procesadas:');
       for (var inst in institutions) {
         print('   - ${inst.name} (${inst.status.name}) - Programas: ${inst.settings.supportedPrograms.length}');
       }
       
-      // Calcular estadísticas reales
+      // Calcular estadísticas reales de instituciones
       int total = institutions.length;
       int active = 0;
       int inactive = 0;
       int suspended = 0;
-      int pending = 0;
 
       for (var institution in institutions) {
         switch (institution.status) {
@@ -155,9 +163,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             suspended++;
             break;
           case InstitutionStatus.pending:
-            pending++;
+            // Las instituciones pendientes no se cuentan aquí
             break;
         }
+      }
+
+      // Cargar estadísticas de solicitudes pendientes
+      int pendingRequests = 0;
+      try {
+        final requestStats = await InstitutionRequestAdapter.getRequestStats();
+        pendingRequests = requestStats['pending'] ?? 0;
+        print('📋 Solicitudes pendientes: $pendingRequests');
+      } catch (e) {
+        print('⚠️ Error cargando estadísticas de solicitudes: $e');
       }
 
       final stats = {
@@ -165,11 +183,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         'active': active,
         'inactive': inactive,
         'suspended': suspended,
-        'pending': pending,
+        'pending': pendingRequests, // Usar solicitudes pendientes
       };
 
-      print('📊 Datos actualizados desde Firebase:');
+      print('📊 Datos actualizados desde Supabase:');
       print('   - Instituciones: ${institutions.length}');
+      print('   - Solicitudes pendientes: $pendingRequests');
       print('   - Estadísticas: $stats');
 
       if (mounted) {
@@ -179,12 +198,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
           _isLoading = false;
         });
       }
-    }, onError: (error) {
-      print('❌ Error en actualización: $error');
+    } catch (e) {
+      print('❌ Error cargando instituciones desde Supabase: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
-    });
+    }
   }
 
   @override
@@ -325,11 +344,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               ),
             ),
             SizedBox(height: 16),
+            
+            // Estadísticas de Instituciones
+            Text(
+              'Instituciones',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xff6C4DDC),
+              ),
+            ),
+            SizedBox(height: 8),
             _buildStatItem('Total Instituciones', _stats['total'] ?? 0, Icons.school, Colors.blue),
             _buildStatItem('Activas', _stats['active'] ?? 0, Icons.check_circle, Colors.green),
             _buildStatItem('Inactivas', _stats['inactive'] ?? 0, Icons.pause_circle, Colors.grey),
             _buildStatItem('Suspendidas', _stats['suspended'] ?? 0, Icons.block, Colors.red),
-            _buildStatItem('Pendientes', _stats['pending'] ?? 0, Icons.schedule, Colors.orange),
+            _buildStatItem('Solicitudes Pendientes', _stats['pending'] ?? 0, Icons.schedule, Colors.orange),
+            
           ],
         ),
       ),
@@ -397,16 +428,22 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               () => _navigateToInstitutionManagement(),
             ),
             _buildActionButton(
-              'Ver Analytics',
+              'Ver Reportes',
               Icons.analytics,
               Colors.purple,
-              () => _showAnalytics(),
+              () => _navigateToReports(),
             ),
             _buildActionButton(
-              'Configuración Sistema',
-              Icons.settings,
-              Colors.grey,
-              () => _showSystemSettings(),
+              'Editar Información de Página',
+              Icons.edit,
+              Colors.green,
+              () => _navigateToPageEditor(),
+            ),
+            _buildActionButton(
+              'Wallet Blockchain',
+              Icons.account_balance_wallet,
+              Color(0xff6C4DDC),
+              () => _navigateToBlockchainWallet(),
             ),
             
             // Sección de instituciones recientes con logos
@@ -605,7 +642,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                           Icon(Icons.school_outlined, size: 64, color: Colors.grey[400]),
                           SizedBox(height: 16),
                           Text(
-                            'No hay instituciones en Firebase',
+                            'No hay instituciones registradas',
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey[600],
@@ -802,6 +839,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                 ],
               ),
             ),
+            if (institution.status != InstitutionStatus.suspended)
             PopupMenuItem(
               value: 'suspend',
               child: Row(
@@ -809,6 +847,17 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                   Icon(Icons.pause, size: 16),
                   SizedBox(width: 8),
                   Text('Suspender'),
+                ],
+              ),
+            ),
+            if (institution.status == InstitutionStatus.suspended)
+              PopupMenuItem(
+                value: 'reactivate',
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, size: 16, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text('Reactivar', style: TextStyle(color: Colors.green)),
                 ],
               ),
             ),
@@ -847,15 +896,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     );
   }
 
-  void _showAnalytics() {
-    // TODO: Implementar analytics
-    AlertService.showInfo(context, 'Info', 'Analytics en desarrollo');
-  }
-
-
-  void _showSystemSettings() {
-    // TODO: Implementar configuración del sistema
-    AlertService.showInfo(context, 'Info', 'Configuración del sistema en desarrollo');
+  void _navigateToReports() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReportsScreen(),
+      ),
+    );
   }
 
 
@@ -871,6 +918,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       case 'suspend':
         _suspendInstitution(institution);
         break;
+      case 'reactivate':
+        _reactivateInstitution(institution);
+        break;
       case 'delete':
         _deleteInstitution(institution);
         break;
@@ -880,23 +930,51 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   void _viewInstitutionDetails(Institution institution) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.95,
+          height: MediaQuery.of(context).size.height * 0.9,
+          child: Column(
           children: [
+              // Header con gradiente
             Container(
-              width: 40,
-              height: 40,
+                width: double.infinity,
+                padding: EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
-                borderRadius: BorderRadius.circular(8),
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
+                      Color(int.parse(institution.colors.secondary.replaceAll('#', '0xFF'))),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    // Logo y nombre
+                    Row(
+                      children: [
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
               ),
               child: institution.logoUrl.isNotEmpty
                   ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(10),
                       child: Image.network(
                         institution.logoUrl,
-                        width: 40,
-                        height: 40,
+                                    width: 56,
+                                    height: 56,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return Center(
@@ -905,7 +983,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                               style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                                            fontSize: 16,
                               ),
                             ),
                           );
@@ -918,43 +996,281 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                                      fontSize: 16,
                         ),
                       ),
                     ),
             ),
-            SizedBox(width: 12),
+                        SizedBox(width: 16),
             Expanded(
-              child: Text(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
                 institution.name,
-                style: TextStyle(fontSize: 18),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                institution.shortName,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 16,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                institution.institutionCode,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 14,
+                                  fontFamily: 'monospace',
               ),
             ),
           ],
         ),
-        content: Column(
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    // Estado con badge
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(institution.status).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _getStatusColor(institution.status).withOpacity(0.5),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
           mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _getStatusIcon(institution.status),
+                            color: _getStatusColor(institution.status),
+                            size: 16,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            institution.status.displayName,
+                            style: TextStyle(
+                              color: _getStatusColor(institution.status),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Contenido principal con scroll
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Descripción: ${institution.description}'),
-            SizedBox(height: 8),
-            Text('Programas: ${institution.settings.supportedPrograms.length}'),
-            SizedBox(height: 8),
-            Text('Estado: ${institution.status.displayName}'),
-            SizedBox(height: 8),
-            Text('Código: ${institution.institutionCode}'),
-            SizedBox(height: 8),
-            Text('Creado: ${institution.createdAt.toString().split(' ')[0]}'),
-          ],
-        ),
-        actions: [
+                      // Información de la institución
+                      _buildInfoSection(
+                        'Información de la Institución',
+                        Icons.school,
+                        [
+                          _buildInfoRow('Nombre Completo', institution.name),
+                          _buildInfoRow('Nombre Corto', institution.shortName),
+                          _buildInfoRow('Código', institution.institutionCode),
+                          _buildInfoRow('Descripción', institution.description.isNotEmpty 
+                              ? institution.description 
+                              : 'Sin descripción'),
+                          _buildInfoRow('Estado Actual', institution.status.displayName),
+                          _buildInfoRow('Fecha de Creación', _formatDate(institution.createdAt)),
+                          _buildInfoRow('Última Actualización', _formatDate(institution.updatedAt)),
+                          _buildInfoRow('Creado por', institution.createdBy.isNotEmpty 
+                              ? institution.createdBy 
+                              : 'Sistema'),
+                        ],
+                      ),
+                      
+                      SizedBox(height: 20),
+                      
+                      // Estadísticas de la institución
+                      _buildInfoSection(
+                        'Estadísticas',
+                        Icons.analytics,
+                        [
+                          _buildInfoRow('Programas Soportados', '${institution.settings.supportedPrograms.length} programas'),
+                          _buildInfoRow('Registro de Estudiantes', 
+                              institution.settings.allowStudentRegistration ? 'Habilitado' : 'Deshabilitado'),
+                          _buildInfoRow('Verificación de Email', 
+                              institution.settings.requireEmailVerification ? 'Requerida' : 'No requerida'),
+                          _buildInfoRow('Verificación Pública', 
+                              institution.settings.allowPublicVerification ? 'Habilitada' : 'Deshabilitada'),
+                          _buildInfoRow('Blockchain', 
+                              institution.settings.enableBlockchain ? 'Habilitado' : 'Deshabilitado'),
+                          _buildInfoRow('Idioma', institution.settings.defaultLanguage.toUpperCase()),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Botones de acción
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cerrar'),
+                    ),
+                    Row(
+                      children: [
+                        if (institution.status != InstitutionStatus.suspended)
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _suspendInstitution(institution);
+                            },
+                            icon: Icon(Icons.pause, size: 16),
+                            label: Text('Suspender'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            ),
+                          ),
+                        if (institution.status == InstitutionStatus.suspended) ...[
+                          SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _reactivateInstitution(institution);
+                            },
+                            icon: Icon(Icons.check_circle, size: 16),
+                            label: Text('Reactivar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Función auxiliar para construir secciones de información
+  Widget _buildInfoSection(String title, IconData icon, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Color(0xff6C4DDC), size: 20),
+            SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xff2E2F44),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12),
+        Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Función auxiliar para construir filas de información
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: Colors.grey[800],
+                fontSize: 14,
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+
+  // Función auxiliar para obtener el icono del estado
+  IconData _getStatusIcon(InstitutionStatus status) {
+    switch (status) {
+      case InstitutionStatus.active:
+        return Icons.check_circle;
+      case InstitutionStatus.inactive:
+        return Icons.pause_circle;
+      case InstitutionStatus.suspended:
+        return Icons.block;
+      case InstitutionStatus.pending:
+        return Icons.schedule;
+    }
+  }
+
+  // Función auxiliar para formatear fechas
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   void _editInstitution(Institution institution) {
@@ -963,8 +1279,286 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   }
 
   void _suspendInstitution(Institution institution) {
-    // TODO: Implementar suspensión de institución
-    AlertService.showInfo(context, 'Info', 'Suspensión de institución en desarrollo');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange, size: 24),
+            SizedBox(width: 8),
+            Text('Suspender Institución'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('¿Estás seguro de que quieres suspender esta institución?'),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Consecuencias de la suspensión:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[700],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '• Todos los usuarios de esta institución no podrán acceder al sistema\n'
+                    '• Los administradores, emisores y estudiantes verán un mensaje informativo\n'
+                    '• Los certificados existentes seguirán siendo válidos\n'
+                    '• La institución podrá ser reactivada posteriormente',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.red[600],
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmSuspendInstitution(institution);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Suspender'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSuspendInstitution(Institution institution) async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Actualizar el estado de la institución a suspendida
+      final updatedInstitution = institution.copyWith(
+        status: InstitutionStatus.suspended,
+        updatedAt: DateTime.now(),
+      );
+
+      print('🔄 Actualizando institución ${institution.name} a estado suspendida...');
+      print('   - ID: ${institution.id}');
+      print('   - Estado anterior: ${institution.status}');
+      print('   - Estado nuevo: ${updatedInstitution.status}');
+
+      // Actualizar en la base de datos
+      final success = await InstitutionAdapter.updateInstitution(institution.id, updatedInstitution);
+      
+      if (!success) {
+        throw Exception('No se pudo actualizar el estado de la institución');
+      }
+      
+      print('✅ Institución ${institution.name} suspendida exitosamente en la base de datos');
+
+      // Cerrar el diálogo de carga
+      Navigator.pop(context);
+
+      // Actualizar la lista local y recalcular estadísticas
+      setState(() {
+        final index = _institutions.indexWhere((inst) => inst.id == institution.id);
+        if (index != -1) {
+          _institutions[index] = updatedInstitution;
+        }
+      });
+      
+      // Recalcular estadísticas (incluyendo solicitudes pendientes)
+      await _recalculateStats();
+
+      // Mostrar mensaje de éxito
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Institución ${institution.name} suspendida exitosamente'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+    } catch (e) {
+      // Cerrar el diálogo de carga si está abierto
+      Navigator.pop(context);
+      
+      print('❌ Error al suspender institución: $e');
+      
+      // Mostrar error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al suspender institución: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _reactivateInstitution(Institution institution) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 24),
+            SizedBox(width: 8),
+            Text('Reactivar Institución'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('¿Estás seguro de que quieres reactivar esta institución?'),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Consecuencias de la reactivación:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '• Todos los usuarios de esta institución podrán acceder al sistema nuevamente\n'
+                    '• Los administradores, emisores y estudiantes podrán usar sus dashboards normales\n'
+                    '• La institución volverá a estar completamente operativa',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.green[600],
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmReactivateInstitution(institution);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Reactivar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmReactivateInstitution(Institution institution) async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Actualizar el estado de la institución a activa
+      final updatedInstitution = institution.copyWith(
+        status: InstitutionStatus.active,
+        updatedAt: DateTime.now(),
+      );
+
+      print('🔄 Reactivando institución ${institution.name}...');
+      print('   - ID: ${institution.id}');
+      print('   - Estado anterior: ${institution.status}');
+      print('   - Estado nuevo: ${updatedInstitution.status}');
+
+      // Actualizar en la base de datos
+      final success = await InstitutionAdapter.updateInstitution(institution.id, updatedInstitution);
+      
+      if (!success) {
+        throw Exception('No se pudo reactivar la institución');
+      }
+      
+      print('✅ Institución ${institution.name} reactivada exitosamente');
+
+      // Cerrar el diálogo de carga
+      Navigator.pop(context);
+
+      // Actualizar la lista local y recalcular estadísticas
+      setState(() {
+        final index = _institutions.indexWhere((inst) => inst.id == institution.id);
+        if (index != -1) {
+          _institutions[index] = updatedInstitution;
+        }
+      });
+      
+      // Recalcular estadísticas (incluyendo solicitudes pendientes)
+      await _recalculateStats();
+
+      // Mostrar mensaje de éxito
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Institución ${institution.name} reactivada exitosamente'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+    } catch (e) {
+      // Cerrar el diálogo de carga si está abierto
+      Navigator.pop(context);
+      
+      print('❌ Error al reactivar institución: $e');
+      
+      // Mostrar error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al reactivar institución: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _deleteInstitution(Institution institution) {
@@ -990,4 +1584,78 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       ),
     );
   }
+
+  void _navigateToPageEditor() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PageEditorScreen(),
+      ),
+    );
+  }
+
+  void _navigateToBlockchainWallet() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BlockchainWalletSetupScreen(),
+      ),
+    );
+  }
+
+  // Función para recalcular estadísticas en tiempo real
+  Future<void> _recalculateStats() async {
+    int total = _institutions.length;
+    int active = 0;
+    int inactive = 0;
+    int suspended = 0;
+
+    for (final institution in _institutions) {
+      switch (institution.status) {
+        case InstitutionStatus.active:
+          active++;
+          break;
+        case InstitutionStatus.inactive:
+          inactive++;
+          break;
+        case InstitutionStatus.suspended:
+          suspended++;
+          break;
+        case InstitutionStatus.pending:
+          // Las instituciones pendientes no se cuentan aquí
+          break;
+      }
+    }
+
+    // Cargar estadísticas de solicitudes pendientes
+    int pendingRequests = 0;
+    try {
+      final requestStats = await InstitutionRequestAdapter.getRequestStats();
+      pendingRequests = requestStats['pending'] ?? 0;
+    } catch (e) {
+      print('⚠️ Error cargando estadísticas de solicitudes en _recalculateStats: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _stats = {
+          'total': total,
+          'active': active,
+          'inactive': inactive,
+          'suspended': suspended,
+          'pending': pendingRequests, // Usar solicitudes pendientes
+        };
+      });
+    }
+
+    print('📊 Estadísticas actualizadas:');
+    print('   - Total: $total');
+    print('   - Activas: $active');
+    print('   - Inactivas: $inactive');
+    print('   - Suspendidas: $suspended');
+    print('   - Solicitudes pendientes: $pendingRequests');
+  }
+
+
+
 }

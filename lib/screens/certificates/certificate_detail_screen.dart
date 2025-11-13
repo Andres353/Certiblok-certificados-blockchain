@@ -3,22 +3,33 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/certificate_service.dart';
-import 'certificate_template_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'dart:html' as html;
+import 'dart:convert';
+import '../../services/adapters/certificate_adapter.dart';
+import '../../models/certificate.dart';
 
 class CertificateDetailScreen extends StatelessWidget {
   final Certificate certificate;
+  final bool isAdminView; // Para distinguir vista de admin vs estudiante
 
   const CertificateDetailScreen({
     Key? key,
     required this.certificate,
+    this.isAdminView = false, // Por defecto es vista de estudiante
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Detalle del Certificado'),
+      body: CustomScrollView(
+        slivers: [
+          // AppBar personalizado con gradiente
+          SliverAppBar(
+            expandedHeight: 200,
+            floating: false,
+            pinned: true,
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         actions: [
@@ -27,210 +38,389 @@ class CertificateDetailScreen extends StatelessWidget {
             onPressed: () => _shareCertificate(context),
           ),
         ],
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+            flexibleSpace: FlexibleSpaceBar(
+              title: Text(
+                'Detalle del Certificado',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xff6C4DDC),
+                      Color(0xff8B5FBF),
+                      Color(0xffA052D6),
+                    ],
+                  ),
+                ),
+                child: Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Header con estado
-            Card(
+                      Icon(
+                        Icons.workspace_premium,
+                        size: 48,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        certificate.title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 4),
+                      _buildStatusChip(certificate.status),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Contenido principal
+          SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                  // Información principal del certificado
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Color(0xff6C4DDC).withOpacity(0.05), // Color sólido sin degradado
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Color(0xff6C4DDC).withOpacity(0.2),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
+                        Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Color(0xff6C4DDC).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.description,
+                                color: Color(0xff6C4DDC),
+                                size: 20,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Información del Certificado',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xff2E2F44),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          certificate.title,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xff2E2F44),
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          certificate.description.isNotEmpty 
+                              ? certificate.description 
+                              : 'Certificado emitido por ${certificate.institutionName}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[700],
+                            height: 1.5,
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Color(0xff6C4DDC),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                           child: Text(
-                            certificate.title,
+                            certificate.status.toUpperCase(),
                             style: TextStyle(
-                              fontSize: 20,
+                              color: Colors.white,
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xff2E2F44),
                             ),
                           ),
                         ),
-                        _buildStatusChip(certificate.status),
                       ],
                     ),
-                    SizedBox(height: 8),
-                    Text(
-                      certificate.description,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
             
-            SizedBox(height: 16),
+                  SizedBox(height: 24),
             
-            // Información del estudiante
-            _buildInfoCard(
-              'Información del Estudiante',
-              Icons.person,
-              [
-                _buildInfoRow('Nombre', certificate.studentName, context),
-                _buildInfoRow('Email', certificate.studentEmail, context),
-                _buildInfoRow('ID en Institución', certificate.studentIdInInstitution, context),
-                _buildInfoRow('Programa', certificate.programName, context),
-                _buildInfoRow('Facultad', certificate.facultyName, context),
-              ],
-              context,
-            ),
+                  // Grid de información principal
+                  _buildInfoGrid(context),
+                  
+                  SizedBox(height: 24),
             
-            SizedBox(height: 16),
+            // Sección de código QR
+            _buildQRCodeSection(context),
             
-            // Información institucional
-            _buildInfoCard(
-              'Información Institucional',
-              Icons.school,
-              [
-                _buildInfoRow('Institución', certificate.institutionName, context),
-                _buildInfoRow('Código de Institución', certificate.institutionCode, context),
-                _buildInfoRow('Tipo de Certificado', _getCertificateTypeLabel(certificate.certificateType), context),
-              ],
-              context,
-            ),
-            
-            SizedBox(height: 16),
-            
-            // Información de emisión
-            _buildInfoCard(
-              'Información de Emisión',
-              Icons.workspace_premium,
-              [
-                _buildInfoRow('Emitido por', certificate.issuedByName, context),
-                _buildInfoRow('Rol del Emisor', _getRoleLabel(certificate.issuedByRole), context),
-                _buildInfoRow('Fecha de Emisión', _formatDate(certificate.issuedAt), context),
-                if (certificate.expiresAt != null)
-                  _buildInfoRow('Fecha de Expiración', _formatDate(certificate.expiresAt!), context),
-                if (certificate.revokedAt != null)
-                  _buildInfoRow('Fecha de Revocación', _formatDate(certificate.revokedAt!), context),
-                if (certificate.revokedReason != null)
-                  _buildInfoRow('Motivo de Revocación', certificate.revokedReason!, context),
-              ],
-              context,
-            ),
-            
-            SizedBox(height: 16),
-            
-            // Código QR y validación
-            _buildInfoCard(
-              'Validación',
-              Icons.qr_code,
-              [
-                _buildInfoRow('ID del Certificado', certificate.id, context, isCode: true),
-                _buildInfoRow('Hash Único', certificate.uniqueHash, context, isCode: true),
-                _buildInfoRow('Código QR', certificate.qrCode, context, isCode: true),
-                if (certificate.blockchainHash != null)
-                  _buildInfoRow('Hash Blockchain', certificate.blockchainHash!, context, isCode: true),
-              ],
-              context,
-            ),
-            
-            SizedBox(height: 16),
+            SizedBox(height: 24),
             
             // Historial de validaciones
-            if (certificate.validationHistory.isNotEmpty)
+            if (certificate.validationHistory?.isNotEmpty == true)
               _buildValidationHistory(),
             
             SizedBox(height: 32),
             
-            // Botones de acción
-            _buildActionButtons(context),
-          ],
-        ),
+            // Botones de acción (solo para estudiantes)
+            if (!isAdminView) _buildActionButtons(context),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildInfoCard(String title, IconData icon, List<Widget> children, BuildContext context) {
-    return Card(
+  Widget _buildInfoGrid(BuildContext context) {
+    return Column(
+      children: [
+        // Primera fila: Información del estudiante e institucional
+        Row(
+          children: [
+            Expanded(
+              child: _buildModernInfoCard(
+              'Información del Estudiante',
+              Icons.person,
+                Color(0xff4CAF50),
+                [
+                  _buildModernInfoRow('Nombre', certificate.studentName, Icons.badge, context),
+                  _buildModernInfoRow('Email', certificate.studentEmail ?? 'No disponible', Icons.email, context),
+                  _buildModernInfoRow('ID Institución', certificate.studentIdInInstitution ?? 'No disponible', Icons.credit_card, context),
+                  _buildModernInfoRow('Programa', certificate.programName ?? 'No disponible', Icons.school, context),
+                ],
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: _buildModernInfoCard(
+              'Información Institucional',
+              Icons.school,
+                Color(0xff2196F3),
+                [
+                  _buildModernInfoRow('Institución', certificate.institutionName, Icons.business, context),
+                  _buildModernInfoRow('Código', certificate.institutionCode, Icons.tag, context),
+                  _buildModernInfoRow('Tipo', _getCertificateTypeLabel(certificate.certificateType), Icons.workspace_premium, context),
+                ],
+              ),
+            ),
+          ],
+            ),
+            
+            SizedBox(height: 16),
+            
+        // Segunda fila: Información de emisión y validación
+        Row(
+          children: [
+            Expanded(
+              child: _buildModernInfoCard(
+              'Información de Emisión',
+              Icons.workspace_premium,
+                Color(0xffFF9800),
+                [
+                  _buildModernInfoRow('Emitido por', certificate.issuedByName ?? 'No disponible', Icons.person_pin, context),
+                  _buildModernInfoRow('Rol', _getRoleLabel(certificate.issuedByRole ?? 'No disponible'), Icons.admin_panel_settings, context),
+                  _buildModernInfoRow('Fecha Emisión', _formatDate(certificate.issuedAt), Icons.calendar_today, context),
+                if (certificate.expiresAt != null)
+                    _buildModernInfoRow('Expiración', _formatDate(certificate.expiresAt!), Icons.schedule, context),
+                if (certificate.revokedAt != null)
+                    _buildModernInfoRow('Revocación', _formatDate(certificate.revokedAt!), Icons.block, context),
+                if (certificate.revokedReason != null)
+                    _buildModernInfoRow('Motivo', certificate.revokedReason!, Icons.info, context),
+                ],
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: _buildModernInfoCard(
+              'Validación',
+              Icons.qr_code,
+                Color(0xff9C27B0),
+                [
+                  _buildModernInfoRow('ID Certificado', certificate.id, Icons.fingerprint, context, isCode: true),
+                  _buildModernInfoRow('Hash Único', certificate.uniqueHash ?? 'No disponible', Icons.security, context, isCode: true),
+                  _buildModernInfoRow('Código QR', certificate.qrCode, Icons.qr_code, context, isCode: true),
+                if (certificate.blockchainHash != null)
+                    _buildModernInfoRow('Hash Blockchain', certificate.blockchainHash!, Icons.link, context, isCode: true),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModernInfoCard(String title, IconData icon, Color color, List<Widget> children) {
+    return Container(
+      height: 300, // Altura fija para todos los cards
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05), // Color sólido con opacidad, sin degradado
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: color.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, color: Color(0xff6C4DDC)),
-                SizedBox(width: 8),
-                Text(
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: color,
+                    size: 20,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 18,
+                      fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: Color(0xff2E2F44),
+                    ),
                   ),
                 ),
               ],
             ),
-            SizedBox(height: 12),
-            ...children,
+            SizedBox(height: 16),
+            Expanded( // Usar Expanded para evitar overflow
+              child: SingleChildScrollView( // Agregar scroll si el contenido es muy largo
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: children,
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value, BuildContext context, {bool isCode = false}) {
+  Widget _buildModernInfoRow(String label, String value, IconData icon, BuildContext context, {bool isCode = false}) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
+          Icon(
+            icon,
+            size: 16,
+            color: Colors.grey[600],
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
               style: TextStyle(
+                    fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey[700],
+                    color: Colors.grey[600],
               ),
             ),
-          ),
-          Expanded(
-            child: isCode
+                SizedBox(height: 2),
+                isCode
                 ? GestureDetector(
                     onTap: () => _copyToClipboard(value, context),
                     child: Container(
-                      padding: EdgeInsets.all(8),
+                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: Colors.grey[300]!),
                       ),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(
-                              value,
+                                  value.length > 20 ? '${value.substring(0, 20)}...' : value,
                               style: TextStyle(
                                 fontFamily: 'monospace',
-                                fontSize: 12,
+                                    fontSize: 11,
+                                    color: Colors.grey[700],
                               ),
                             ),
                           ),
-                          Icon(Icons.copy, size: 16, color: Colors.grey[600]),
+                              Icon(Icons.copy, size: 12, color: Colors.grey[600]),
                         ],
                       ),
                     ),
                   )
                 : Text(
                     value,
-                    style: TextStyle(fontSize: 14),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+              ],
                   ),
           ),
         ],
       ),
     );
   }
+
 
   Widget _buildStatusChip(String status) {
     Color color;
@@ -273,50 +463,109 @@ class CertificateDetailScreen extends StatelessWidget {
   }
 
   Widget _buildValidationHistory() {
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Color(0xff6C4DDC).withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xff6C4DDC).withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: Color(0xff6C4DDC).withOpacity(0.2),
+          width: 1,
+        ),
+      ),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.history, color: Color(0xff6C4DDC)),
-                SizedBox(width: 8),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Color(0xff6C4DDC).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.history,
+                    color: Color(0xff6C4DDC),
+                    size: 20,
+                  ),
+                ),
+                SizedBox(width: 12),
                 Text(
                   'Historial de Validaciones',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: Color(0xff2E2F44),
                   ),
                 ),
               ],
             ),
-            SizedBox(height: 12),
-            ...certificate.validationHistory.map((validation) {
+            SizedBox(height: 16),
+            if (certificate.validationHistory != null)
+              ...certificate.validationHistory!.asMap().entries.map((entry) {
+              final index = entry.key;
+              final validation = entry.value;
+              final isValid = validation['isValid'] == true;
+              
               return Container(
-                margin: EdgeInsets.only(bottom: 8),
-                padding: EdgeInsets.all(12),
+                margin: EdgeInsets.only(bottom: 12),
+                padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: validation['isValid'] == true 
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isValid 
+                        ? [Colors.green.withOpacity(0.1), Colors.green.withOpacity(0.05)]
+                        : [Colors.red.withOpacity(0.1), Colors.red.withOpacity(0.05)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: validation['isValid'] == true 
+                    color: isValid 
                         ? Colors.green.withOpacity(0.3)
                         : Colors.red.withOpacity(0.3),
+                    width: 1,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isValid ? Colors.green : Colors.red).withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      validation['isValid'] == true ? Icons.check_circle : Icons.cancel,
-                      color: validation['isValid'] == true ? Colors.green : Colors.red,
-                      size: 16,
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isValid 
+                            ? Colors.green.withOpacity(0.2)
+                            : Colors.red.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        isValid ? Icons.check_circle : Icons.cancel,
+                        color: isValid ? Colors.green[700] : Colors.red[700],
+                        size: 18,
+                      ),
                     ),
-                    SizedBox(width: 8),
+                    SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,11 +573,21 @@ class CertificateDetailScreen extends StatelessWidget {
                           Text(
                             validation['message'] ?? 'Validación',
                             style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              color: validation['isValid'] == true ? Colors.green[700] : Colors.red[700],
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: isValid ? Colors.green[700] : Colors.red[700],
                             ),
                           ),
-                          if (validation['validatedAt'] != null)
+                          if (validation['validatedAt'] != null) ...[
+                            SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time,
+                                  size: 12,
+                                  color: Colors.grey[600],
+                                ),
+                                SizedBox(width: 4),
                             Text(
                               _formatDate(DateTime.parse(validation['validatedAt'])),
                               style: TextStyle(
@@ -337,6 +596,25 @@ class CertificateDetailScreen extends StatelessWidget {
                               ),
                             ),
                         ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    // Número de validación
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (isValid ? Colors.green : Colors.red).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '#${index + 1}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isValid ? Colors.green[700] : Colors.red[700],
+                        ),
                       ),
                     ),
                   ],
@@ -350,92 +628,144 @@ class CertificateDetailScreen extends StatelessWidget {
   }
 
   Widget _buildActionButtons(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () => _viewTemplate(context),
-            icon: Icon(Icons.visibility),
-            label: Text('Ver Plantilla del Certificado'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xff6C4DDC),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Color(0xff6C4DDC).withOpacity(0.05),
+          ],
         ),
-        SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () => _downloadCertificate(context),
-            icon: Icon(Icons.download),
-            label: Text('Descargar PDF'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xff6C4DDC).withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
           ),
+        ],
+        border: Border.all(
+          color: Color(0xff6C4DDC).withOpacity(0.2),
+          width: 1,
         ),
-        SizedBox(height: 12),
-        // Botón para actualizar información de institución si está vacía
-        if (certificate.institutionName.isEmpty || certificate.institutionCode.isEmpty)
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _updateInstitutionInfo(context),
-              icon: Icon(Icons.refresh),
-              label: Text('Actualizar Información de Institución'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          children: [
+            // Botones principales
+            Row(
+              children: [
+                Expanded(
+                  child: _buildModernButton(
+                    'Ver Certificado',
+                    Icons.visibility,
+                    Color(0xff6C4DDC),
+                    () => _viewCertificate(context),
+                  ),
                 ),
-              ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: _buildModernButton(
+                    'Descargar PDF',
+                    Icons.download,
+                    Colors.green,
+                    () => _downloadCertificate(context),
+                  ),
+                ),
+              ],
             ),
-          ),
-        if (certificate.institutionName.isEmpty || certificate.institutionCode.isEmpty)
+            
+            // Botón de actualización si es necesario
+            if (certificate.institutionName.isEmpty || certificate.institutionCode.isEmpty) ...[
           SizedBox(height: 12),
+              _buildModernButton(
+                'Actualizar Información de Institución',
+                Icons.refresh,
+                Colors.orange,
+                () => _updateInstitutionInfo(context),
+                isFullWidth: true,
+              ),
+            ],
+            
+            SizedBox(height: 16),
+            
+            // Botones secundarios
         Row(
           children: [
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _copyQRCode(context),
-                icon: Icon(Icons.qr_code),
-                label: Text('Copiar QR'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Color(0xff6C4DDC),
-                  side: BorderSide(color: Color(0xff6C4DDC)),
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                ),
+                  child: _buildModernOutlinedButton(
+                    'Copiar QR',
+                    Icons.qr_code,
+                    Color(0xff6C4DDC),
+                    () => _copyQRCode(context),
               ),
             ),
             SizedBox(width: 12),
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _shareCertificate(context),
-                icon: Icon(Icons.share),
-                label: Text('Compartir'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Color(0xff6C4DDC),
-                  side: BorderSide(color: Color(0xff6C4DDC)),
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                ),
+                  child: _buildModernOutlinedButton(
+                    'Compartir',
+                    Icons.share,
+                    Color(0xff6C4DDC),
+                    () => _shareCertificate(context),
               ),
             ),
           ],
         ),
       ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernButton(String text, IconData icon, Color color, VoidCallback onPressed, {bool isFullWidth = false}) {
+    return Container(
+      width: isFullWidth ? double.infinity : null,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(
+          text,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 2,
+          shadowColor: color.withOpacity(0.3),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernOutlinedButton(String text, IconData icon, Color color, VoidCallback onPressed) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color, width: 2),
+        padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
     );
   }
 
@@ -471,27 +801,572 @@ class CertificateDetailScreen extends StatelessWidget {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  void _copyToClipboard(String text, BuildContext context) {
+  void _copyToClipboard(String text, BuildContext? context) {
     Clipboard.setData(ClipboardData(text: text));
+    if (context != null) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Copiado al portapapeles'),
         duration: Duration(seconds: 2),
       ),
     );
+    } else {
+      print('📋 Texto copiado al portapapeles');
+    }
   }
+
+  void _showInfoSnackBar(String message) {
+    // Este método se puede usar cuando no hay contexto disponible
+    print('ℹ️ $message');
+  }
+
+  void _showErrorSnackBar(String message, BuildContext context) {
+    print('❌ $message');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[600],
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message, BuildContext context) {
+    print('✅ $message');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green[600],
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
 
   void _copyQRCode(BuildContext context) {
     _copyToClipboard(certificate.qrCode, context);
   }
 
-  void _viewTemplate(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CertificateTemplateScreen(certificate: certificate),
+  // Mostrar vista previa de la plantilla en un modal
+  void _showTemplatePreview(BuildContext context, Map<String, dynamic> templateData, Certificate certificate) {
+    final design = templateData['design'] as Map<String, dynamic>;
+    final layout = templateData['layout'] as Map<String, dynamic>;
+    final studentName = certificate.data['studentName'] ?? 'Juan Pérez';
+    final program = certificate.data['program'] ?? 'Programa de Estudios';
+    final faculty = certificate.data['faculty'] ?? 'Facultad';
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: 800,  // Más ancho para proporción de certificado
+            height: 600, // Menos alto para proporción horizontal
+            decoration: BoxDecoration(
+              color: _parseColor(design['backgroundColor']),
+              borderRadius: BorderRadius.circular(design['borderRadius']?.toDouble() ?? 8),
+              border: Border.all(
+                color: _parseColor(design['borderColor']),
+                width: design['borderWidth']?.toDouble() ?? 2,
+              ),
+            ),
+            child: Stack(
+              children: [
+                // Imagen de fondo del certificado
+                if (design['certificateBackgroundUrl']?.isNotEmpty == true)
+                  _buildBackgroundImage(design['certificateBackgroundUrl']),
+                
+                // Patrón de fondo
+                if (layout['backgroundPattern'] != 'none')
+                  _buildBackgroundPattern(design, layout),
+                
+                // Logo de la institución
+                _buildInstitutionLogo(design, layout),
+                
+                // Contenido principal
+                Column(
+                  children: [
+                    // Header - Solo si está habilitado en el layout
+                    if (layout['showHeader'] != false)
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(
+                          vertical: design['titleFontSize']?.toDouble() ?? 25,
+                          horizontal: 30,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              _parseColor(design['primaryColor']),
+                              _parseColor(design['secondaryColor']),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(design['borderRadius']?.toDouble() ?? 8),
+                            topRight: Radius.circular(design['borderRadius']?.toDouble() ?? 8),
+                          ),
+                        ),
+                        child: Text(
+                          'CERTIFICADO',
+                          style: _getTextStyle(
+                            design['titleFontFamily'] ?? 'Arial',
+                            design['titleFontSize']?.toDouble() ?? 24,
+                            _parseColor(design['headerTextColor']),
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    
+                    // Línea decorativa
+                    Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            _parseColor(design['primaryColor']),
+                            _parseColor(design['secondaryColor']),
+                          ],
+                        ),
+                      ),
+                    ),
+                    
+                    // Contenido
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 30, horizontal: 40),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Subtítulo
+                            Text(
+                              'Se certifica que',
+                              style: _getTextStyle(
+                                design['subtitleFontFamily'] ?? 'Arial',
+                                design['subtitleFontSize']?.toDouble() ?? 16,
+                                _parseColor(design['textColor']),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            
+                            SizedBox(height: 30),
+                            
+                            // Nombre del estudiante
+                            Text(
+                              studentName,
+                              style: _getTextStyle(
+                                design['titleFontFamily'] ?? 'Arial',
+                                (design['subtitleFontSize']?.toDouble() ?? 16) + 8,
+                                _parseColor(design['textColor']),
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            
+                            SizedBox(height: 30),
+                            
+                            // Descripción
+                            Text(
+                              'Ha completado exitosamente el programa de estudios',
+                              style: _getTextStyle(
+                                design['bodyFontFamily'] ?? 'Arial',
+                                design['bodyFontSize']?.toDouble() ?? 14,
+                                _parseColor(design['textColor']),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            
+                            SizedBox(height: 10),
+                            
+                            Text(
+                              program,
+                              style: _getTextStyle(
+                                design['bodyFontFamily'] ?? 'Arial',
+                                design['bodyFontSize']?.toDouble() ?? 14,
+                                _parseColor(design['textColor']),
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            
+                            Text(
+                              'en la $faculty',
+                              style: _getTextStyle(
+                                design['bodyFontFamily'] ?? 'Arial',
+                                design['bodyFontSize']?.toDouble() ?? 14,
+                                _parseColor(design['textColor']),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            
+                            SizedBox(height: 40),
+                            
+                            // Firmas
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      design['issuerName'] ?? 'Institución',
+                                      style: _getTextStyle(
+                                        design['smallFontFamily'] ?? 'Arial',
+                                        design['smallFontSize']?.toDouble() ?? 12,
+                                        _parseColor(design['textColor']),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      design['issuerTitleLabel'] ?? 'Título',
+                                      style: _getTextStyle(
+                                        design['smallFontFamily'] ?? 'Arial',
+                                        design['smallFontSize']?.toDouble() ?? 12,
+                                        _parseColor(design['textColor']),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      design['dateLabel'] ?? 'Fecha',
+                                      style: _getTextStyle(
+                                        design['smallFontFamily'] ?? 'Arial',
+                                        design['smallFontSize']?.toDouble() ?? 12,
+                                        _parseColor(design['textColor']),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    
+                    // Botón cerrar
+                    Padding(
+                      padding: EdgeInsets.all(16),
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text('Cerrar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Función auxiliar para parsear colores
+  Color _parseColor(dynamic colorValue) {
+    if (colorValue == null) return Colors.black;
+    if (colorValue is String) {
+      // Si es un string, intentar parsearlo como color
+      if (colorValue.startsWith('#')) {
+        return Color(int.parse(colorValue.substring(1), radix: 16) + 0xFF000000);
+      }
+      // Si es un nombre de color, usar colores predefinidos
+      switch (colorValue.toLowerCase()) {
+        case 'red': return Colors.red;
+        case 'blue': return Colors.blue;
+        case 'green': return Colors.green;
+        case 'black': return Colors.black;
+        case 'white': return Colors.white;
+        default: return Colors.black;
+      }
+    }
+    return Colors.black;
+  }
+
+  // Función auxiliar para crear estilos de texto
+  TextStyle _getTextStyle(String fontFamily, double fontSize, Color color, {FontWeight? fontWeight}) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: color,
+      fontWeight: fontWeight,
+    );
+  }
+
+  // Construir imagen de fondo
+  Widget _buildBackgroundImage(String? backgroundUrl) {
+    if (backgroundUrl == null || backgroundUrl.isEmpty) return SizedBox.shrink();
+    
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: backgroundUrl.startsWith('data:')
+                ? MemoryImage(base64Decode(backgroundUrl.split(',')[1]))
+                : NetworkImage(backgroundUrl) as ImageProvider,
+            fit: BoxFit.cover,
+          ),
+        ),
       ),
     );
+  }
+
+  // Construir patrón de fondo
+  Widget _buildBackgroundPattern(Map<String, dynamic> design, Map<String, dynamic> layout) {
+    final pattern = layout['backgroundPattern'] ?? 'none';
+    if (pattern == 'none') return SizedBox.shrink();
+    
+    return Positioned.fill(
+      child: CustomPaint(
+        painter: BackgroundPatternPainter(
+          pattern: pattern,
+          color: _parseColor(design['primaryColor']).withOpacity(0.1),
+        ),
+      ),
+    );
+  }
+
+  // Construir logo de la institución
+  Widget _buildInstitutionLogo(Map<String, dynamic> design, Map<String, dynamic> layout) {
+    final logoUrl = design['institutionLogoUrl'];
+    if (logoUrl == null || logoUrl.isEmpty) return SizedBox.shrink();
+    
+    final opacity = design['logoOpacity']?.toDouble() ?? 1.0;
+    
+    Widget logoWidget = Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: logoUrl.startsWith('data:')
+              ? MemoryImage(base64Decode(logoUrl.split(',')[1]))
+              : NetworkImage(logoUrl) as ImageProvider,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+    
+    if (opacity < 1.0) {
+      logoWidget = Opacity(opacity: opacity, child: logoWidget);
+    }
+    
+    return Positioned(
+      top: 20,
+      right: 20,
+      child: logoWidget,
+    );
+  }
+
+  void _viewCertificate(BuildContext context) async {
+    try {
+      print('🔄 Abriendo certificado...');
+      print('📊 Estructura de datos del certificado: ${certificate.data.keys.toList()}');
+      
+      // Verificar si hay PDF del certificado en data.pdfData
+      if (certificate.data['pdfData'] != null) {
+        final pdfDataValue = certificate.data['pdfData'];
+        print('📄 Tipo de pdfData: ${pdfDataValue.runtimeType}');
+        
+        if (pdfDataValue is String) {
+          print('📄 PDF encontrado en data.pdfData (String), abriendo...');
+          _openPdf(pdfDataValue, context);
+          return;
+        } else if (pdfDataValue is Map<String, dynamic>) {
+          print('📄 Claves de pdfData: ${pdfDataValue.keys.toList()}');
+          // Si es un mapa, buscar el campo 'data' o 'content'
+          final pdfString = pdfDataValue['data'] ?? 
+                           pdfDataValue['content'] ?? 
+                           pdfDataValue['base64'] ??
+                           pdfDataValue['fileData'] ??
+                           pdfDataValue['certificateData'];
+          if (pdfString is String && pdfString.isNotEmpty) {
+            print('📄 PDF encontrado en data.pdfData (Map), abriendo...');
+            _openPdf(pdfString, context);
+            return;
+          } else {
+            print('❌ No se encontró PDF en pdfData con los campos: data, content, base64, fileData, certificateData');
+            // Mostrar todos los valores para debugging
+            pdfDataValue.forEach((key, value) {
+              if (value is String) {
+                print('📄 $key: ${value.length > 100 ? value.substring(0, 100) + '...' : value}');
+              } else {
+                print('📄 $key: ${value.runtimeType}');
+              }
+            });
+          }
+        }
+      }
+      
+      // Verificar si hay PDF en data.customCertificateData
+      if (certificate.data['customCertificateData'] != null) {
+        final customData = certificate.data['customCertificateData'];
+        print('📄 Tipo de customCertificateData: ${customData.runtimeType}');
+        
+        if (customData is String) {
+          print('📄 PDF encontrado en data.customCertificateData (String), abriendo...');
+          _openPdf(customData, context);
+          return;
+        } else if (customData is Map<String, dynamic>) {
+          print('📄 Claves de customCertificateData: ${customData.keys.toList()}');
+          
+          // Buscar en múltiples campos posibles
+          final pdfString = customData['data'] ?? 
+                           customData['content'] ?? 
+                           customData['base64'] ?? 
+                           customData['pdfData'] ??
+                           customData['fileData'] ??
+                           customData['certificateData'];
+          
+          if (pdfString is String && pdfString.isNotEmpty) {
+            print('📄 PDF encontrado en data.customCertificateData (Map), abriendo...');
+            _openPdf(pdfString, context);
+            return;
+          } else {
+            print('❌ No se encontró PDF en customCertificateData con los campos: data, content, base64, pdfData, fileData, certificateData');
+            // Mostrar todos los valores para debugging
+            customData.forEach((key, value) {
+              if (value is String) {
+                print('📄 $key: ${value.length > 100 ? value.substring(0, 100) + '...' : value}');
+              } else {
+                print('📄 $key: ${value.runtimeType}');
+              }
+            });
+          }
+        }
+      }
+      
+      // Verificar si hay plantilla generada como PDF
+      if (certificate.data['templateData'] != null) {
+        final templateData = certificate.data['templateData'] as Map<String, dynamic>;
+        print('📄 Tipo de templateData: ${templateData.runtimeType}');
+        print('📄 Claves de templateData: ${templateData.keys.toList()}');
+        
+        final templatePdfData = templateData['pdfData'];
+        if (templatePdfData != null) {
+          print('📄 Tipo de templatePdfData: ${templatePdfData.runtimeType}');
+          
+          if (templatePdfData is String && templatePdfData.isNotEmpty) {
+            print('📄 PDF de plantilla encontrado (String), abriendo...');
+            _openPdf(templatePdfData, context);
+            return;
+          } else if (templatePdfData is Map<String, dynamic>) {
+            final pdfString = templatePdfData['data'] ?? templatePdfData['content'] ?? templatePdfData['base64'];
+            if (pdfString is String && pdfString.isNotEmpty) {
+              print('📄 PDF de plantilla encontrado (Map), abriendo...');
+              _openPdf(pdfString, context);
+              return;
+            }
+          }
+        }
+        
+        // Si no hay PDF generado, mostrar vista previa de la plantilla
+        print('ℹ️ Plantilla encontrada, mostrando vista previa...');
+        _showTemplatePreview(context, templateData, certificate);
+        return;
+      }
+      
+      // Si no hay certificado disponible, mostrar mensaje
+      print('❌ No se encontró PDF en ninguna ubicación');
+      _showInfoSnackBar('No hay certificado disponible para visualizar');
+      
+    } catch (e) {
+      print('❌ Error al abrir certificado: $e');
+      _showErrorSnackBar('Error al abrir certificado: $e', context);
+    }
+  }
+
+  void _openPdf(String pdfContent, BuildContext context) async {
+    // Determinar si es base64 puro o data URL
+    final String dataUrl = pdfContent.startsWith('data:') 
+        ? pdfContent 
+        : 'data:application/pdf;base64,$pdfContent';
+    
+    try {
+      print('🔄 Abriendo PDF del certificado automáticamente...');
+      print('📄 URL generada: ${dataUrl.substring(0, 100)}...');
+      
+      // Usar JavaScript para crear blob URL y abrir en nueva pestaña
+      await _openPdfWithBlob(dataUrl);
+      
+    } catch (e) {
+      print('❌ Error al abrir PDF: $e');
+      // Fallback: copiar al portapapeles y mostrar instrucciones
+      _openPdfFallback(dataUrl, context);
+    }
+  }
+
+  Future<void> _openPdfWithBlob(String dataUrl) async {
+    try {
+      print('🔄 Creando blob URL con JavaScript...');
+      
+      // Extraer el base64 del data URL
+      final String base64Data = dataUrl.contains(',') ? dataUrl.split(',')[1] : dataUrl;
+      print('📊 Base64 extraído: ${base64Data.substring(0, 50)}...');
+      
+      // Decodificar base64 a bytes
+      final List<int> bytes = base64Decode(base64Data);
+      print('📊 Bytes decodificados: ${bytes.length} bytes');
+      
+      // Crear blob usando JavaScript
+      final blob = html.Blob([bytes], 'application/pdf');
+      
+      // Crear URL del blob
+      final blobUrl = html.Url.createObjectUrl(blob);
+      print('📄 Blob URL creada: $blobUrl');
+      
+      // Abrir en nueva pestaña
+      html.window.open(blobUrl, '_blank');
+      
+      _showInfoSnackBar('Certificado abierto en nueva pestaña');
+      print('✅ Certificado abierto exitosamente con blob URL');
+      
+      // Limpiar la URL del blob después de un tiempo
+      Future.delayed(Duration(seconds: 30), () {
+        html.Url.revokeObjectUrl(blobUrl);
+        print('🧹 Blob URL limpiada');
+      });
+      
+    } catch (e) {
+      print('❌ Error con blob URL: $e');
+      
+      // Fallback: intentar con url_launcher
+      try {
+        final Uri pdfUri = Uri.parse(dataUrl);
+        if (await canLaunchUrl(pdfUri)) {
+          await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+          _showInfoSnackBar('Certificado abierto en nueva pestaña');
+          print('✅ Certificado abierto con url_launcher fallback');
+        } else {
+          throw Exception('No se puede abrir con url_launcher');
+        }
+      } catch (e2) {
+        print('❌ Fallback también falló: $e2');
+        throw e;
+      }
+    }
+  }
+
+  void _openPdfFallback(String dataUrl, BuildContext context) {
+    try {
+      _copyToClipboard(dataUrl, null);
+      // Nota: showDialog necesita un contexto válido, pero este método se llama desde _openPdf
+      // que no tiene acceso directo al contexto. Se manejará con el mensaje de error.
+      print('📋 URL del certificado copiada al portapapeles');
+      print('📄 URL: ${dataUrl.substring(0, 100)}...');
+      print('ℹ️ Para ver el certificado:');
+      print('   1. Abre una nueva pestaña en tu navegador');
+      print('   2. Pega la URL en la barra de direcciones (Ctrl+V)');
+      print('   3. Presiona Enter');
+    } catch (e) {
+      print('Error al copiar certificado: $e');
+      _showErrorSnackBar('Error al copiar URL del certificado: $e', context);
+    }
   }
 
   void _updateInstitutionInfo(BuildContext context) async {
@@ -512,7 +1387,7 @@ class CertificateDetailScreen extends StatelessWidget {
       );
 
       // Actualizar la información de la institución
-      await CertificateService.forceUpdateInstitutionInfo(certificate.id);
+      await CertificateAdapter.forceUpdateInstitutionInfo(certificate.id);
 
       // Cerrar el diálogo de carga
       Navigator.of(context).pop();
@@ -557,13 +1432,376 @@ class CertificateDetailScreen extends StatelessWidget {
     );
   }
 
-  void _downloadCertificate(BuildContext context) {
-    // TODO: Implementar descarga de PDF
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Funcionalidad de descarga en desarrollo'),
-        backgroundColor: Colors.orange,
+  void _downloadCertificate(BuildContext context) async {
+    try {
+      print('🔄 Descargando certificado...');
+      print('📊 Estructura de datos del certificado: ${certificate.data.keys.toList()}');
+      
+      // Verificar si hay PDF del certificado en data.pdfData
+      if (certificate.data['pdfData'] != null) {
+        final pdfDataValue = certificate.data['pdfData'];
+        print('📄 Tipo de pdfData: ${pdfDataValue.runtimeType}');
+        
+        if (pdfDataValue is String) {
+          print('📄 PDF encontrado en data.pdfData (String), descargando...');
+          await _downloadPdf(pdfDataValue, context);
+          return;
+        } else if (pdfDataValue is Map<String, dynamic>) {
+          print('📄 Claves de pdfData: ${pdfDataValue.keys.toList()}');
+          // Si es un mapa, buscar el campo 'data' o 'content'
+          final pdfString = pdfDataValue['data'] ?? 
+                           pdfDataValue['content'] ?? 
+                           pdfDataValue['base64'] ??
+                           pdfDataValue['fileData'] ??
+                           pdfDataValue['certificateData'];
+          if (pdfString is String && pdfString.isNotEmpty) {
+            print('📄 PDF encontrado en data.pdfData (Map), descargando...');
+            await _downloadPdf(pdfString, context);
+            return;
+          }
+        }
+      }
+      
+      // Verificar si hay PDF en data.customCertificateData
+      if (certificate.data['customCertificateData'] != null) {
+        final customData = certificate.data['customCertificateData'];
+        print('📄 Tipo de customCertificateData: ${customData.runtimeType}');
+        
+        if (customData is String) {
+          print('📄 PDF encontrado en customCertificateData (String), descargando...');
+          await _downloadPdf(customData, context);
+          return;
+        } else if (customData is Map<String, dynamic>) {
+          print('📄 Claves de customCertificateData: ${customData.keys.toList()}');
+          final pdfString = customData['data'] ?? 
+                           customData['content'] ?? 
+                           customData['base64'] ??
+                           customData['fileData'] ??
+                           customData['certificateData'] ??
+                           customData['pdfData'];
+          if (pdfString is String && pdfString.isNotEmpty) {
+            print('📄 PDF encontrado en customCertificateData (Map), descargando...');
+            await _downloadPdf(pdfString, context);
+            return;
+          }
+        }
+      }
+      
+      // Si no se encuentra PDF
+      _showErrorSnackBar('No se encontró PDF para descargar', context);
+      
+    } catch (e) {
+      print('❌ Error al descargar certificado: $e');
+      _showErrorSnackBar('Error al descargar certificado: $e', context);
+    }
+  }
+
+  Future<void> _downloadPdf(String pdfContent, BuildContext context) async {
+    // Determinar si es base64 puro o data URL
+    final String dataUrl = pdfContent.startsWith('data:') 
+        ? pdfContent 
+        : 'data:application/pdf;base64,$pdfContent';
+    
+    try {
+      print('🔄 Descargando PDF del certificado...');
+      print('📄 URL generada: ${dataUrl.substring(0, 100)}...');
+      
+      // Usar JavaScript para crear blob URL y descargar
+      await _downloadPdfWithBlob(dataUrl, context);
+      
+    } catch (e) {
+      print('❌ Error al descargar PDF: $e');
+      _showErrorSnackBar('Error al descargar PDF: $e', context);
+    }
+  }
+
+  Future<void> _downloadPdfWithBlob(String dataUrl, BuildContext context) async {
+    try {
+      print('🔄 Creando blob URL para descarga...');
+      
+      // Extraer el base64 del data URL
+      final String base64Data = dataUrl.contains(',') ? dataUrl.split(',')[1] : dataUrl;
+      print('📊 Base64 extraído: ${base64Data.substring(0, 50)}...');
+      
+      // Decodificar base64 a bytes
+      final List<int> bytes = base64Decode(base64Data);
+      print('📊 Bytes decodificados: ${bytes.length} bytes');
+      
+      // Crear blob usando JavaScript
+      final blob = html.Blob([bytes], 'application/pdf');
+      
+      // Crear URL del blob
+      final blobUrl = html.Url.createObjectUrl(blob);
+      print('📄 Blob URL creada: $blobUrl');
+      
+      // Generar nombre de archivo descriptivo
+      final fileName = _generateFileName();
+      
+      // Crear elemento de descarga
+      final anchor = html.AnchorElement(href: blobUrl);
+      anchor.download = fileName;
+      anchor.style.display = 'none';
+      
+      // Agregar al DOM temporalmente
+      html.document.body?.children.add(anchor);
+      
+      // Simular click para iniciar descarga
+      anchor.click();
+      
+      // Limpiar
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(blobUrl);
+      
+      _showSuccessSnackBar('Certificado descargado correctamente como: $fileName', context);
+      print('✅ Certificado descargado exitosamente como: $fileName');
+      
+    } catch (e) {
+      print('❌ Error con blob URL: $e');
+      _showErrorSnackBar('Error al descargar PDF: $e', context);
+    }
+  }
+
+  String _generateFileName() {
+    try {
+      // Obtener título del certificado
+      String title = certificate.title.isNotEmpty ? certificate.title : 'Certificado';
+      
+      // Obtener nombre del estudiante
+      String studentName = certificate.studentName.isNotEmpty ? certificate.studentName : 'Estudiante';
+      
+      // Limpiar caracteres especiales que pueden causar problemas en nombres de archivo
+      String cleanTitle = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+      String cleanStudentName = studentName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+      
+      // Generar nombre del archivo
+      String fileName = '${cleanTitle}_${cleanStudentName}.pdf';
+      
+      // Limitar longitud del nombre de archivo (máximo 100 caracteres)
+      if (fileName.length > 100) {
+        fileName = fileName.substring(0, 100) + '.pdf';
+      }
+      
+      print('📄 Nombre de archivo generado: $fileName');
+      return fileName;
+      
+    } catch (e) {
+      print('❌ Error generando nombre de archivo: $e');
+      return 'certificado.pdf'; // Fallback
+    }
+  }
+
+  Widget _buildQRCodeSection(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Color(0xff6C4DDC).withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xff6C4DDC).withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: Color(0xff6C4DDC).withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.qr_code,
+                  color: Color(0xff6C4DDC),
+                  size: 28,
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'Código QR de Verificación',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff2E2F44),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            Text(
+              'Escanea este código QR para verificar la autenticidad del certificado',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 24),
+            // Código QR visual
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: QrImageView(
+                data: certificate.qrCode,
+                version: QrVersions.auto,
+                size: 200.0,
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+              ),
+            ),
+            SizedBox(height: 20),
+            // Información del QR
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'URL de Verificación:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  SelectableText(
+                    certificate.qrCode,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
+
+
 }
+
+// Clase para pintar patrones de fondo
+class BackgroundPatternPainter extends CustomPainter {
+  final String pattern;
+  final Color color;
+
+  BackgroundPatternPainter({
+    required this.pattern,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    switch (pattern) {
+      case 'dots':
+        _paintDots(canvas, size, paint);
+        break;
+      case 'lines':
+        _paintLines(canvas, size, paint);
+        break;
+      case 'grid':
+        _paintGrid(canvas, size, paint);
+        break;
+      case 'diagonal':
+        _paintDiagonal(canvas, size, paint);
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _paintDots(Canvas canvas, Size size, Paint paint) {
+    final double spacing = 20.0;
+    final double radius = 2.0;
+    
+    for (double x = spacing; x < size.width; x += spacing) {
+      for (double y = spacing; y < size.height; y += spacing) {
+        canvas.drawCircle(Offset(x, y), radius, paint);
+      }
+    }
+  }
+
+  void _paintLines(Canvas canvas, Size size, Paint paint) {
+    final double spacing = 30.0;
+    
+    for (double x = 0; x < size.width; x += spacing) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        paint..strokeWidth = 1.0,
+      );
+    }
+  }
+
+  void _paintGrid(Canvas canvas, Size size, Paint paint) {
+    final double spacing = 30.0;
+    
+    // Líneas verticales
+    for (double x = 0; x < size.width; x += spacing) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        paint..strokeWidth = 1.0,
+      );
+    }
+    
+    // Líneas horizontales
+    for (double y = 0; y < size.height; y += spacing) {
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        paint..strokeWidth = 1.0,
+      );
+    }
+  }
+
+  void _paintDiagonal(Canvas canvas, Size size, Paint paint) {
+    final double spacing = 40.0;
+    
+    for (double i = -size.height; i < size.width + size.height; i += spacing) {
+      canvas.drawLine(
+        Offset(i, 0),
+        Offset(i + size.height, size.height),
+        paint..strokeWidth = 1.0,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+

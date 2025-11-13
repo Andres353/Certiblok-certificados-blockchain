@@ -8,6 +8,51 @@ class InstitutionRequestService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _collection = 'institution_requests';
 
+  // Crear una nueva solicitud
+  static Future<String> createRequest({
+    required String institutionName,
+    required String shortName,
+    required String institutionType,
+    required String contactName,
+    required String contactEmail,
+    required String contactPhone,
+    required String address,
+    required String city,
+    required String country,
+    required String website,
+    required String description,
+    required String logoUrl,
+    required String documents,
+  }) async {
+    try {
+      final docRef = await FirebaseFirestore.instance
+          .collection('institution_requests')
+          .add({
+        'institutionName': institutionName,
+        'shortName': shortName,
+        'institutionType': institutionType,
+        'contactName': contactName,
+        'contactEmail': contactEmail,
+        'contactPhone': contactPhone,
+        'address': address,
+        'city': city,
+        'country': country,
+        'website': website,
+        'description': description,
+        'logoUrl': logoUrl,
+        'documents': documents,
+        'status': 'pending',
+        'requestedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Solicitud de institución creada con ID: ${docRef.id}');
+      return docRef.id;
+    } catch (e) {
+      print('❌ Error al crear solicitud: $e');
+      rethrow;
+    }
+  }
+
   // Obtener todas las solicitudes
   static Future<List<InstitutionRequest>> getAllRequests() async {
     try {
@@ -79,6 +124,17 @@ class InstitutionRequestService {
       final InstitutionRequest? request = await getRequestById(requestId);
       if (request == null) {
         print('❌ Solicitud no encontrada: $requestId');
+        return false;
+      }
+
+      // Verificar que la solicitud no esté ya aprobada o rechazada
+      if (request.status == 'approved') {
+        print('⚠️ La solicitud ya está aprobada: $requestId');
+        return false;
+      }
+      
+      if (request.status == 'rejected') {
+        print('⚠️ La solicitud ya fue rechazada: $requestId');
         return false;
       }
 
@@ -169,6 +225,17 @@ class InstitutionRequestService {
       final InstitutionRequest? request = await getRequestById(requestId);
       if (request == null) {
         print('❌ Solicitud no encontrada: $requestId');
+        return false;
+      }
+
+      // Verificar que la solicitud no esté ya aprobada o rechazada
+      if (request.status == 'approved') {
+        print('⚠️ La solicitud ya está aprobada: $requestId');
+        return false;
+      }
+      
+      if (request.status == 'rejected') {
+        print('⚠️ La solicitud ya fue rechazada: $requestId');
         return false;
       }
 
@@ -359,6 +426,35 @@ class InstitutionRequest {
       'rejectionReason': rejectionReason,
       'institutionId': institutionId,
     };
+  }
+
+  static InstitutionRequest fromSupabase(Map<String, dynamic> map, String id) {
+    return InstitutionRequest(
+      id: id,
+      institutionName: map['institution_name'] ?? '',
+      shortName: map['short_name'] ?? '',
+      institutionType: map['institution_type'] ?? '',
+      contactName: map['contact_name'] ?? '',
+      contactEmail: map['contact_email'] ?? '',
+      contactPhone: map['contact_phone'] ?? '',
+      address: map['address'] ?? '',
+      city: map['city'] ?? '',
+      country: map['country'] ?? '',
+      website: map['website'] ?? '',
+      description: map['description'] ?? '',
+      logoUrl: map['logo_url'] ?? '',
+      documents: map['documents'] ?? '',
+      status: map['status'] ?? 'pending',
+      requestedAt: map['requested_at'] != null 
+          ? DateTime.parse(map['requested_at'])
+          : DateTime.now(),
+      reviewedBy: map['reviewed_by'],
+      reviewedAt: map['reviewed_at'] != null 
+          ? DateTime.parse(map['reviewed_at'])
+          : null,
+      rejectionReason: map['rejection_reason'],
+      institutionId: map['institution_id'],
+    );
   }
 
   static InstitutionRequest fromMap(Map<String, dynamic> map, String id) {

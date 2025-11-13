@@ -3,9 +3,9 @@
 
 import 'package:flutter/material.dart';
 import '../../models/institution.dart';
-import '../../services/institution_service.dart';
-import '../../services/auth_service.dart';
-import '../../services/student_institution_service.dart';
+import '../../services/adapters/institution_adapter.dart';
+import '../../services/adapters/auth_adapter.dart';
+import '../../services/alert_service.dart';
 
 class StudentRegistration extends StatefulWidget {
   @override
@@ -56,7 +56,7 @@ class _StudentRegistrationState extends State<StudentRegistration> {
     });
 
     try {
-      final institution = await InstitutionService.getInstitutionByCode(
+      final institution = await InstitutionAdapter.getInstitutionByCode(
         _codeController.text.trim().toUpperCase(),
       );
 
@@ -138,7 +138,7 @@ class _StudentRegistrationState extends State<StudentRegistration> {
 
     try {
       // Registrar estudiante
-      final result = await AuthService.registerStudent(
+      final result = await AuthAdapter.registerStudent(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
         fullName: _fullNameController.text.trim(),
@@ -146,61 +146,28 @@ class _StudentRegistrationState extends State<StudentRegistration> {
       );
 
       if (result['success']) {
-        // Crear relación estudiante-institución
-        final studentId = result['studentId'];
-        final relationResult = await StudentInstitutionService.addStudentToInstitution(
-          studentId: studentId,
-          institutionId: _selectedInstitution!.id,
-          studentIdInInstitution: _studentIdController.text.trim(),
-          program: _programController.text.trim().isNotEmpty ? _programController.text.trim() : null,
-          faculty: _facultyController.text.trim().isNotEmpty ? _facultyController.text.trim() : null,
+        // Mostrar SweetAlert de éxito
+        AlertService.showSuccess(
+          context,
+          'Registro Exitoso',
+          'Tu cuenta ha sido creada exitosamente.\n\nPuedes iniciar sesión con tus credenciales.',
+          onOk: () {
+            Navigator.pop(context); // Volver al login
+          },
         );
-
-        if (relationResult['success']) {
-          // Mostrar éxito
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text('Registro Exitoso'),
-              content: Text(
-                'Tu cuenta ha sido creada exitosamente y te has vinculado a ${_selectedInstitution!.name}. '
-                'Puedes iniciar sesión con tus credenciales.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context); // Cerrar diálogo
-                    Navigator.pop(context); // Volver al login
-                  },
-                  child: Text('Iniciar Sesión'),
-                ),
-              ],
-            ),
-          );
-        } else {
-          // Mostrar error en la relación
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Cuenta creada pero error al vincular con la institución: ${relationResult['message']}'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
       } else {
         // Mostrar error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Error al registrar estudiante'),
-            backgroundColor: Colors.red,
-          ),
+        AlertService.showError(
+          context,
+          'Error al Registrar',
+          result['message'] ?? 'Error al registrar estudiante',
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+      AlertService.showError(
+        context,
+        'Error',
+        'Error al registrar estudiante: $e',
       );
     } finally {
       setState(() => _isLoading = false);
@@ -378,9 +345,41 @@ class _StudentRegistrationState extends State<StudentRegistration> {
                   ),
                 ),
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Ingresa tu nombre completo';
+                  if (value == null || value.isEmpty) {
+                    return 'El nombre completo es obligatorio';
                   }
+                  
+                  // Limpiar espacios extra y dividir en palabras
+                  final cleanValue = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+                  final words = cleanValue.split(' ');
+                  
+                  // Validar que tenga al menos 2 palabras (nombre y apellido)
+                  if (words.length < 2) {
+                    return 'Debe incluir nombre y al menos un apellido';
+                  }
+                  
+                  // Validar que cada palabra tenga al menos 2 caracteres
+                  for (String word in words) {
+                    if (word.length < 2) {
+                      return 'Cada parte del nombre debe tener al menos 2 caracteres';
+                    }
+                  }
+                  
+                  // Validar que no contenga números
+                  if (RegExp(r'[0-9]').hasMatch(cleanValue)) {
+                    return 'El nombre no puede contener números';
+                  }
+                  
+                  // Validar que no contenga caracteres especiales
+                  if (RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(cleanValue)) {
+                    return 'El nombre no puede contener caracteres especiales';
+                  }
+                  
+                  // Validar longitud total mínima
+                  if (cleanValue.length < 5) {
+                    return 'El nombre completo debe tener al menos 5 caracteres';
+                  }
+                  
                   return null;
                 },
               ),

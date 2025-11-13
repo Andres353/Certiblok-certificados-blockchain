@@ -3,7 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../../models/program_opportunity.dart';
-import '../../services/programs_opportunities_service.dart';
+import '../../services/adapters/programs_adapter.dart';
 import '../../services/user_context_service.dart';
 import 'create_program_screen.dart';
 
@@ -30,10 +30,16 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
     try {
       print('🔄 Cargando programas en gestión...');
       
-      // Usar método de debugging temporalmente
-      final programs = await ProgramsOpportunitiesService.getAllProgramsForDebug();
+      // Obtener el contexto del usuario para filtrar por institución
+      final userContext = UserContextService.currentContext;
+      if (userContext?.institutionId == null) {
+        throw Exception('Usuario debe tener institución asignada');
+      }
       
-      print('📊 Programas cargados: ${programs.length}');
+      // Filtrar programas por la institución del administrador
+      final programs = await ProgramsAdapter.getProgramsByInstitution(userContext!.institutionId!);
+      
+      print('📊 Programas cargados para institución ${userContext.institutionId}: ${programs.length}');
       
       setState(() {
         _programs = programs;
@@ -41,7 +47,7 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
       });
       
       if (programs.isEmpty) {
-        _showInfoSnackBar('No hay programas disponibles');
+        _showInfoSnackBar('No hay programas disponibles para tu institución');
       }
     } catch (e) {
       print('❌ Error cargando programas: $e');
@@ -306,216 +312,209 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
   Widget _buildProgramsList(bool isWeb) {
     return GridView.builder(
       padding: EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: isWeb ? 3 : 2,
-        childAspectRatio: 0.8, // Ajustado para cards más cuadradas
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: isWeb ? 3 : 2,
+          childAspectRatio: 2.0, // Mucho más ancho que alto para cards horizontales
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+        ),
       itemCount: _filteredPrograms.length,
       itemBuilder: (context, index) => _buildProgramCard(_filteredPrograms[index], isWeb),
     );
   }
 
   Widget _buildProgramCard(ProgramOpportunity program, bool isWeb) {
-    return AspectRatio(
-      aspectRatio: 1.0,
-      child: Card(
-        elevation: 6,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white,
-                Colors.grey[50]!,
-              ],
-            ),
+    return Card(
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white,
+              Colors.grey[50]!,
+            ],
           ),
-          child: InkWell(
-            onTap: () => _showProgramDetailsModal(program),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Estado del programa
-                  Row(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _getStatusColor(program.status).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _getStatusColor(program.status).withOpacity(0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: _getStatusColor(program.status),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              program.status,
-                              style: TextStyle(
-                                color: _getStatusColor(program.status),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Spacer(),
-                      PopupMenuButton<String>(
-                        onSelected: (value) => _handleProgramAction(value, program),
-                        icon: Icon(Icons.more_vert, size: 18, color: Colors.grey[600]),
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: 'edit',
-                            child: Row(
-                              children: [
-                                Icon(Icons.edit, size: 16, color: Colors.blue),
-                                SizedBox(width: 8),
-                                Text('Editar'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'toggle',
-                            child: Row(
-                              children: [
-                                Icon(Icons.power_settings_new, size: 16, color: Colors.orange),
-                                SizedBox(width: 8),
-                                Text(program.isActive ? 'Desactivar' : 'Activar'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete, size: 16, color: Colors.red),
-                                SizedBox(width: 8),
-                                Text('Eliminar'),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  
-                  SizedBox(height: 12),
-                  
-                  // Título del programa
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          program.title,
-                          style: TextStyle(
-                            fontSize: isWeb ? 18 : 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xff2E2F44),
-                            height: 1.2,
-                          ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        
-                        SizedBox(height: 8),
-                        
-                        // Carreras
-                        if (program.careerNames.isNotEmpty)
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Color(0xff6C4DDC).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              program.careerNames.length > 1 
-                                  ? '${program.careerNames.length} carreras'
-                                  : program.careerNames.first,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xff6C4DDC),
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  
-                  SizedBox(height: 12),
-                  
-                  // Información rápida
-                  Row(
-                    children: [
-                      _buildInfoChip(
-                        Icons.people,
-                        '${program.currentApplications}/${program.maxApplications}',
-                        Colors.blue,
-                      ),
-                      SizedBox(width: 8),
-                      _buildInfoChip(
-                        Icons.schedule,
-                        '${program.daysUntilDeadline}d',
-                        Colors.orange,
-                      ),
-                    ],
-                  ),
-                  
-                  SizedBox(height: 12),
-                  
-                  // Botón Ver Info
-                  Container(
-                    width: double.infinity,
-                    height: 36,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _showProgramDetailsModal(program),
-                      icon: Icon(Icons.info_outline, size: 16),
-                      label: Text('Ver Info'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xff6C4DDC),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+        ),
+        child: InkWell(
+          onTap: () => _showProgramDetailsModal(program),
+          borderRadius: BorderRadius.circular(16),
+           child: Padding(
+             padding: EdgeInsets.all(12),
+               child: Stack(
+                 children: [
+                   // Contenido principal
+                   Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       // Título del programa
+                       Text(
+                         program.title,
+                         style: TextStyle(
+                           fontSize: isWeb ? 16 : 14,
+                           fontWeight: FontWeight.bold,
+                           color: Color(0xff2E2F44),
+                           height: 1.2,
+                         ),
+                         maxLines: 2,
+                         overflow: TextOverflow.ellipsis,
+                       ),
+                       
+                       SizedBox(height: 6),
+                       
+                       // Información en fila
+                       Row(
+                         children: [
+                           // Estado
+                           Container(
+                             padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                             decoration: BoxDecoration(
+                               color: _getStatusColor(program.status).withOpacity(0.1),
+                               borderRadius: BorderRadius.circular(8),
+                               border: Border.all(
+                                 color: _getStatusColor(program.status).withOpacity(0.3),
+                                 width: 1,
+                               ),
+                             ),
+                             child: Text(
+                               program.status,
+                               style: TextStyle(
+                                 color: _getStatusColor(program.status),
+                                 fontSize: 10,
+                                 fontWeight: FontWeight.w600,
+                               ),
+                             ),
+                           ),
+                           
+                           SizedBox(width: 8),
+                           
+                           // Carreras
+                           if (program.careerNames.isNotEmpty)
+                             Container(
+                               padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                               decoration: BoxDecoration(
+                                 color: Color(0xff6C4DDC).withOpacity(0.1),
+                                 borderRadius: BorderRadius.circular(8),
+                               ),
+                               child: Text(
+                                 program.careerNames.length > 1 
+                                     ? '${program.careerNames.length} carreras'
+                                     : program.careerNames.first,
+                                 style: TextStyle(
+                                   fontSize: 10,
+                                   color: Color(0xff6C4DDC),
+                                   fontWeight: FontWeight.w500,
+                                 ),
+                                 maxLines: 1,
+                                 overflow: TextOverflow.ellipsis,
+                               ),
+                             ),
+                         ],
+                       ),
+                     ],
+                   ),
+                   
+                   // Menú de 3 puntos en la esquina superior derecha
+                   Positioned(
+                     top: 0,
+                     right: 0,
+                     child: PopupMenuButton<String>(
+                       onSelected: (value) => _handleProgramAction(value, program),
+                       icon: Icon(Icons.more_vert, size: 18, color: Colors.grey[600]),
+                       itemBuilder: (context) => [
+                         PopupMenuItem(
+                           value: 'edit',
+                           child: Row(
+                             children: [
+                               Icon(Icons.edit, size: 16, color: Colors.blue),
+                               SizedBox(width: 8),
+                               Text('Editar'),
+                             ],
+                           ),
+                         ),
+                         PopupMenuItem(
+                           value: 'toggle',
+                           child: Row(
+                             children: [
+                               Icon(Icons.power_settings_new, size: 16, color: Colors.orange),
+                               SizedBox(width: 8),
+                               Text(program.isActive ? 'Desactivar' : 'Activar'),
+                             ],
+                           ),
+                         ),
+                         PopupMenuItem(
+                           value: 'delete',
+                           child: Row(
+                             children: [
+                               Icon(Icons.delete, size: 16, color: Colors.red),
+                               SizedBox(width: 8),
+                               Text('Eliminar'),
+                             ],
+                           ),
+                         ),
+                       ],
+                     ),
+                   ),
+                   
+                   // Estadísticas en la esquina inferior izquierda
+                   Positioned(
+                     bottom: 0,
+                     left: 0,
+                     child: Row(
+                       children: [
+                         _buildInfoChip(
+                           Icons.people,
+                           '${program.currentApplications}/${program.maxApplications}',
+                           Colors.blue,
+                         ),
+                         
+                         SizedBox(width: 8),
+                         
+                         _buildInfoChip(
+                           Icons.schedule,
+                           '${program.daysUntilDeadline}d',
+                           Colors.orange,
+                         ),
+                       ],
+                     ),
+                   ),
+                   
+                   // Botón Ver Info en la esquina inferior derecha
+                   Positioned(
+                     bottom: 0,
+                     right: 0,
+                     child: Container(
+                       width: 120,
+                       height: 32,
+                       child: ElevatedButton.icon(
+                         onPressed: () => _showProgramDetailsModal(program),
+                         icon: Icon(Icons.info_outline, size: 14),
+                         label: Text('Ver Info', style: TextStyle(fontSize: 12)),
+                         style: ElevatedButton.styleFrom(
+                           backgroundColor: Color(0xff6C4DDC),
+                           foregroundColor: Colors.white,
+                           shape: RoundedRectangleBorder(
+                             borderRadius: BorderRadius.circular(6),
+                           ),
+                           elevation: 0,
+                         ),
+                       ),
+                     ),
+                   ),
+                 ],
+               ),
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildInfoChip(IconData icon, String text, Color color) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(6),
@@ -528,7 +527,7 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
           Text(
             text,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               color: color,
               fontWeight: FontWeight.w500,
             ),
@@ -1117,7 +1116,7 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
 
   Future<void> _toggleProgramStatus(ProgramOpportunity program) async {
     try {
-      await ProgramsOpportunitiesService.toggleProgramStatus(
+      await ProgramsAdapter.toggleProgramStatus(
         program.id,
         !program.isActive,
       );
@@ -1129,29 +1128,178 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
   }
 
   Future<void> _deleteProgram(ProgramOpportunity program) async {
+    // Mostrar diálogo de confirmación
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Eliminar Programa'),
-        content: Text('¿Estás seguro de que quieres eliminar "${program.title}"?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.red,
+                size: 28,
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Confirmar Eliminación',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Estás seguro de que deseas eliminar esta pasantía?',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    program.title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[700],
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    program.institutionName,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Esta acción no se puede deshacer',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancelar'),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.grey[700],
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
           ),
-          TextButton(
+          ElevatedButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Eliminar', style: TextStyle(color: Colors.red)),
+            icon: Icon(Icons.delete, size: 18),
+            label: Text('Eliminar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
           ),
         ],
       ),
     );
 
+    // Si el usuario confirmó, eliminar el programa
     if (confirmed == true) {
       try {
-        // TODO: Implementar eliminación de programa
-        _showInfoSnackBar('Eliminación de programa en desarrollo');
+        // Mostrar indicador de carga
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Eliminando programa...'),
+              ],
+            ),
+          ),
+        );
+
+        // Eliminar el programa usando el adapter
+        await ProgramsAdapter.deleteProgram(program.id);
+
+        // Cerrar el diálogo de carga
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+
+        // Recargar la lista de programas
+        await _loadPrograms();
+
+        // Mostrar mensaje de éxito
+        _showSuccessSnackBar('Programa eliminado exitosamente');
       } catch (e) {
+        print('❌ Error eliminando programa: $e');
+        
+        // Cerrar el diálogo de carga si está abierto
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        
         _showErrorSnackBar('Error al eliminar programa: $e');
       }
     }

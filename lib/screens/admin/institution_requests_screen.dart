@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/adapters/institution_request_adapter.dart';
 import '../../services/institution_request_service.dart';
 import '../../widgets/institution_header.dart';
+import '../../services/alert_service.dart';
 
 class InstitutionRequestsScreen extends StatefulWidget {
   const InstitutionRequestsScreen({super.key});
@@ -18,6 +21,7 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
   bool _isLoading = true;
   String _searchQuery = '';
   String _selectedStatus = 'all';
+  Set<String> _processingRequests = {}; // Para rastrear solicitudes en proceso
 
   @override
   void initState() {
@@ -36,8 +40,8 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
     setState(() => _isLoading = true);
     
     try {
-      final requests = await InstitutionRequestService.getAllRequests();
-      final stats = await InstitutionRequestService.getRequestStats();
+      final requests = await InstitutionRequestAdapter.getAllRequests();
+      final stats = await InstitutionRequestAdapter.getRequestStats();
       
       setState(() {
         _requests = requests;
@@ -46,8 +50,10 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar datos: $e')),
+      AlertService.showError(
+        context,
+        'Error',
+        'Error al cargar datos: $e',
       );
     }
   }
@@ -366,20 +372,36 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
               children: [
                 if (request.status == 'pending') ...[
                   IconButton(
-                    onPressed: () => _showRequestDetails(request),
+                    onPressed: _processingRequests.contains(request.id) 
+                        ? null 
+                        : () => _showRequestDetails(request),
                     icon: const Icon(Icons.visibility),
                     tooltip: 'Ver detalles',
                   ),
-                  IconButton(
-                    onPressed: () => _approveRequest(request),
-                    icon: const Icon(Icons.check, color: Colors.green),
-                    tooltip: 'Aprobar',
-                  ),
-                  IconButton(
-                    onPressed: () => _rejectRequest(request),
-                    icon: const Icon(Icons.close, color: Colors.red),
-                    tooltip: 'Rechazar',
-                  ),
+                  _processingRequests.contains(request.id)
+                      ? Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          onPressed: () => _approveRequest(request),
+                          icon: const Icon(Icons.check, color: Colors.green),
+                          tooltip: 'Aprobar',
+                        ),
+                  _processingRequests.contains(request.id)
+                      ? SizedBox(width: 48) // Espaciador para mantener consistencia
+                      : IconButton(
+                          onPressed: () => _rejectRequest(request),
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          tooltip: 'Rechazar',
+                        ),
                 ] else ...[
                   IconButton(
                     onPressed: () => _showRequestDetails(request),
@@ -598,37 +620,59 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
                     ),
                     SizedBox(width: 12),
                     if (request.status == 'pending') ...[
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          _rejectRequest(request);
-                        },
-                        icon: Icon(Icons.close, size: 18),
-                        label: Text('Rechazar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
+                      _processingRequests.contains(request.id)
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: _processingRequests.contains(request.id)
+                                  ? null
+                                  : () {
+                                      Navigator.of(context).pop();
+                                      _rejectRequest(request);
+                                    },
+                              icon: Icon(Icons.close, size: 18),
+                              label: Text('Rechazar'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
                       SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          _approveRequest(request);
-                        },
-                        icon: Icon(Icons.check, size: 18),
-                        label: Text('Aprobar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
+                      _processingRequests.contains(request.id)
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: _processingRequests.contains(request.id)
+                                  ? null
+                                  : () {
+                                      Navigator.of(context).pop();
+                                      _approveRequest(request);
+                                    },
+                              icon: Icon(Icons.check, size: 18),
+                              label: Text('Aprobar'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
                     ],
                   ],
                 ),
@@ -738,15 +782,26 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await _processApproval(request);
-            },
+            onPressed: _processingRequests.contains(request.id)
+                ? null
+                : () async {
+                    Navigator.of(context).pop();
+                    await _processApproval(request);
+                  },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Aprobar'),
+            child: _processingRequests.contains(request.id)
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Aprobar'),
           ),
         ],
       ),
@@ -784,22 +839,35 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              if (reasonController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Debe proporcionar un motivo para el rechazo')),
-                );
-                return;
-              }
-              
-              Navigator.of(context).pop();
-              await _processRejection(request, reasonController.text.trim());
-            },
+            onPressed: _processingRequests.contains(request.id)
+                ? null
+                  : () async {
+                    if (reasonController.text.trim().isEmpty) {
+                      AlertService.showWarning(
+                        context,
+                        'Motivo Requerido',
+                        'Debe proporcionar un motivo para el rechazo',
+                      );
+                      return;
+                    }
+                    
+                    Navigator.of(context).pop();
+                    await _processRejection(request, reasonController.text.trim());
+                  },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Rechazar'),
+            child: _processingRequests.contains(request.id)
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Rechazar'),
           ),
         ],
       ),
@@ -807,81 +875,131 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
   }
 
   Future<void> _processApproval(InstitutionRequest request) async {
+    // Verificar si ya está en procesamiento (protección adicional)
+    if (_processingRequests.contains(request.id)) {
+      print('⚠️ La solicitud ya está siendo procesada: ${request.id}');
+      return;
+    }
+
+    // Agregar el ID a la lista de procesamiento
+    setState(() {
+      _processingRequests.add(request.id);
+    });
+
     try {
-      // Obtener el ID del usuario actual de Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
-      final superAdminId = currentUser?.uid ?? 'super_admin_system';
+      // Obtener el ID del usuario actual de Supabase Auth
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      final superAdminId = currentUser?.id ?? 'super_admin_system';
       
       print('Super Admin ID: $superAdminId');
       
-      final success = await InstitutionRequestService.approveRequest(
+      // Agregar timeout de seguridad (30 segundos)
+      final success = await InstitutionRequestAdapter.approveRequest(
         request.id,
         superAdminId,
+      ).timeout(
+        Duration(seconds: 30),
+        onTimeout: () {
+          print('⏱️ Timeout al aprobar solicitud: ${request.id}');
+          throw TimeoutException('La operación tardó demasiado tiempo');
+        },
       );
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Solicitud de "${request.institutionName}" aprobada exitosamente'),
-            backgroundColor: Colors.green,
-          ),
+        AlertService.showSuccess(
+          context,
+          'Solicitud Aprobada',
+          'La solicitud de "${request.institutionName}" ha sido aprobada exitosamente',
+          onOk: () => _loadData(),
         );
-        _loadData();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al aprobar la solicitud'),
-            backgroundColor: Colors.red,
-          ),
+        AlertService.showError(
+          context,
+          'Error',
+          'Error al aprobar la solicitud',
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+      print('❌ Error en _processApproval: $e');
+      AlertService.showError(
+        context,
+        'Error',
+        'Error: $e',
       );
+    } finally {
+      // Siempre remover el ID de la lista de procesamiento
+      if (mounted) {
+        setState(() {
+          _processingRequests.remove(request.id);
+        });
+      }
+      print('✅ ID removido de procesamiento: ${request.id}');
     }
   }
 
   Future<void> _processRejection(InstitutionRequest request, String reason) async {
+    // Verificar si ya está en procesamiento (protección adicional)
+    if (_processingRequests.contains(request.id)) {
+      print('⚠️ La solicitud ya está siendo procesada: ${request.id}');
+      return;
+    }
+
+    // Agregar el ID a la lista de procesamiento
+    setState(() {
+      _processingRequests.add(request.id);
+    });
+
     try {
-      // Obtener el ID del usuario actual de Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
-      final superAdminId = currentUser?.uid ?? 'super_admin_system';
+      // Obtener el ID del usuario actual de Supabase Auth
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      final superAdminId = currentUser?.id ?? 'super_admin_system';
       
       print('Super Admin ID: $superAdminId');
       
-      final success = await InstitutionRequestService.rejectRequest(
+      // Agregar timeout de seguridad (30 segundos)
+      final success = await InstitutionRequestAdapter.rejectRequest(
         request.id,
         superAdminId,
         reason,
+      ).timeout(
+        Duration(seconds: 30),
+        onTimeout: () {
+          print('⏱️ Timeout al rechazar solicitud: ${request.id}');
+          throw TimeoutException('La operación tardó demasiado tiempo');
+        },
       );
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Solicitud de "${request.institutionName}" rechazada'),
-            backgroundColor: Colors.orange,
-          ),
+        AlertService.showWarning(
+          context,
+          'Solicitud Rechazada',
+          'La solicitud de "${request.institutionName}" ha sido rechazada',
+          onOk: () => _loadData(),
         );
-        _loadData();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al rechazar la solicitud'),
-            backgroundColor: Colors.red,
-          ),
+        AlertService.showError(
+          context,
+          'Error',
+          'Error al rechazar la solicitud',
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+      print('❌ Error en _processRejection: $e');
+      AlertService.showError(
+        context,
+        'Error',
+        'Error: $e',
       );
+    } finally {
+      // Siempre remover el ID de la lista de procesamiento
+      if (mounted) {
+        setState(() {
+          _processingRequests.remove(request.id);
+        });
+      }
+      print('✅ ID removido de procesamiento: ${request.id}');
     }
   }
 }

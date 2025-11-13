@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
-import '../../header/HeaderRegisterStudent.dart';
+import '../../header/HeaderRegisterInstitution.dart';
 import '../../services/image_upload_service.dart';
+import '../../services/adapters/institution_request_adapter.dart';
+import '../../services/alert_service.dart';
 
 final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
@@ -104,9 +106,22 @@ class InstitutionRequest {
 // Función para registrar solicitud de institución
 Future<void> registerInstitutionRequest(InstitutionRequest request) async {
   try {
-    await firestore
-        .collection('institution_requests')
-        .add(request.toMap());
+    // Usar el adaptador para registrar en Firebase o Supabase según configuración
+    await InstitutionRequestAdapter.createRequest(
+      institutionName: request.institutionName,
+      shortName: request.shortName,
+      institutionType: request.institutionType,
+      contactName: request.contactName,
+      contactEmail: request.contactEmail,
+      contactPhone: request.contactPhone,
+      address: request.address,
+      city: request.city,
+      country: request.country,
+      website: request.website,
+      description: request.description,
+      logoUrl: request.logoUrl,
+      documents: request.documents,
+    );
     
     print('Solicitud de institución registrada exitosamente');
   } catch (e) {
@@ -140,17 +155,13 @@ class _RegisterInstState extends State<RegisterInst> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _logoUrlController = TextEditingController();
 
-  String _selectedInstitutionType = 'university';
+  String _selectedInstitutionType = 'universidad';
   String _selectedCountry = 'Colombia';
   bool _isLoading = false;
 
   final List<String> _institutionTypes = [
-    'university',
-    'college',
-    'school',
-    'institute',
-    'academy',
-    'other'
+    'universidad',
+    'instituto',
   ];
 
   final List<String> _countries = [
@@ -256,19 +267,17 @@ class _RegisterInstState extends State<RegisterInst> {
           _logoUrlController.text = imageUrl!;
         });
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Logo subido exitosamente'),
-            backgroundColor: Colors.green,
-          ),
+        AlertService.showSuccess(
+          context,
+          'Logo Subido',
+          'El logo de la institución se ha subido exitosamente.',
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al subir imagen: $e'),
-          backgroundColor: Colors.red,
-        ),
+      AlertService.showError(
+        context,
+        'Error al Subir Logo',
+        'No se pudo subir el logo: $e',
       );
     } finally {
       setState(() => _isLoading = false);
@@ -318,41 +327,23 @@ class _RegisterInstState extends State<RegisterInst> {
 
         await registerInstitutionRequest(request);
 
-        // Mostrar diálogo de confirmación
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 30),
-                SizedBox(width: 10),
-                Text('Solicitud Enviada'),
-              ],
-            ),
-            content: const Text(
-              'Tu solicitud de registro ha sido enviada exitosamente. '
-              'Nuestro equipo la revisará y te contactaremos en un plazo de 2-3 días hábiles.\n\n'
-              'Recibirás un email de confirmación en breve.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Cerrar diálogo
-                  Navigator.of(context).pop(); // Volver al menú
-                },
-                child: const Text('Entendido'),
-              ),
-            ],
-          ),
+        // Mostrar SweetAlert de confirmación
+        AlertService.showSuccess(
+          context,
+          'Solicitud Enviada',
+          'Tu solicitud de registro ha sido enviada exitosamente.\n\n'
+          'Nuestro equipo la revisará y te contactaremos en un plazo de 2-3 días hábiles.\n\n'
+          'Recibirás un email de confirmación en breve.',
+          onOk: () {
+            Navigator.of(context).pop(); // Volver al menú
+          },
         );
 
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al enviar la solicitud: $e'),
-            backgroundColor: Colors.red,
-          ),
+        AlertService.showError(
+          context,
+          'Error al Enviar Solicitud',
+          'No se pudo enviar la solicitud de registro: $e',
         );
       } finally {
         setState(() => _isLoading = false);
@@ -362,12 +353,8 @@ class _RegisterInstState extends State<RegisterInst> {
 
   String _getInstitutionTypeLabel(String type) {
     switch (type) {
-      case 'university': return 'Universidad';
-      case 'college': return 'Colegio';
-      case 'school': return 'Escuela';
-      case 'institute': return 'Instituto';
-      case 'academy': return 'Academia';
-      case 'other': return 'Otro';
+      case 'universidad': return 'Universidad';
+      case 'instituto': return 'Instituto';
       default: return type;
     }
   }
@@ -432,7 +419,7 @@ class _RegisterInstState extends State<RegisterInst> {
       body: Column(
         children: [
           // Header personalizado
-          const HeaderRegisterStudent(),
+          const HeaderRegisterInstitution(),
           
           // Indicador de progreso
           Container(
@@ -606,17 +593,15 @@ class _RegisterInstState extends State<RegisterInst> {
           TextFormField(
             controller: _descriptionController,
             decoration: const InputDecoration(
-              labelText: 'Descripción de la institución *',
+              labelText: 'Descripción de la institución (opcional)',
               hintText: 'Breve descripción de los servicios académicos que ofrece',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.description),
             ),
             maxLines: 3,
             validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'La descripción es requerida';
-              }
-              if (value.trim().length < 20) {
+              // Si hay contenido, debe tener al menos 20 caracteres
+              if (value != null && value.trim().isNotEmpty && value.trim().length < 20) {
                 return 'La descripción debe tener al menos 20 caracteres';
               }
               return null;

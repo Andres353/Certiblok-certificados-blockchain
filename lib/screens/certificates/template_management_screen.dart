@@ -2,7 +2,7 @@
 // Pantalla de gestión de plantillas de certificados
 
 import 'package:flutter/material.dart';
-import '../../services/certificate_template_service.dart';
+import '../../services/adapters/certificate_template_adapter.dart';
 import '../../services/user_context_service.dart';
 import '../../models/certificate_template.dart';
 import 'advanced_template_editor_screen.dart';
@@ -20,29 +20,55 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTemplates();
+    _initializeAndLoadTemplates();
+  }
+
+  Future<void> _initializeAndLoadTemplates() async {
+    // Asegurar que el contexto del usuario esté cargado
+    await UserContextService.loadUserContext();
+    await _loadTemplates();
   }
 
   Future<void> _loadTemplates() async {
     setState(() => _isLoading = true);
     try {
       print('🔄 Cargando plantillas...');
-      _templates = await CertificateTemplateService.getTemplates();
+      
+      // Verificar contexto del usuario
+      final userContext = UserContextService.currentContext;
+      print('👤 Usuario actual: ${userContext?.userName}');
+      print('🏫 Institución actual: ${userContext?.institutionId}');
+      print('🏫 Nombre institución: ${userContext?.currentInstitution?.name}');
+      
+      _templates = await CertificateTemplateAdapter.getTemplates();
       print('✅ Plantillas cargadas: ${_templates.length}');
       
-      _defaultTemplate = await CertificateTemplateService.getDefaultTemplate();
+      // Mostrar detalles de las plantillas cargadas
+      for (var template in _templates) {
+        print('📄 Plantilla: ${template.name} - Institución: ${template.institutionId} - Creada por: ${template.createdBy}');
+      }
+      
+      // Verificación adicional: filtrar solo plantillas de la institución actual
+      final currentInstitutionId = userContext?.institutionId;
+      if (currentInstitutionId != null) {
+        final originalCount = _templates.length;
+        _templates = _templates.where((template) => template.institutionId == currentInstitutionId).toList();
+        print('🔍 Filtrado adicional: $originalCount -> ${_templates.length} plantillas de la institución actual');
+      }
+      
+      _defaultTemplate = await CertificateTemplateAdapter.getDefaultTemplate();
       print('✅ Plantilla por defecto: ${_defaultTemplate?.name ?? "Ninguna"}');
       
       // Si no hay plantillas, crear una por defecto
       if (_templates.isEmpty) {
         print('🔄 No hay plantillas, creando plantilla por defecto...');
         try {
-          await CertificateTemplateService.createDefaultTemplate(
+          await CertificateTemplateAdapter.createDefaultTemplate(
             UserContextService.currentContext?.institutionId ?? 'default'
           );
           // Recargar plantillas después de crear la por defecto
-          _templates = await CertificateTemplateService.getTemplates();
-          _defaultTemplate = await CertificateTemplateService.getDefaultTemplate();
+          _templates = await CertificateTemplateAdapter.getTemplates();
+          _defaultTemplate = await CertificateTemplateAdapter.getDefaultTemplate();
           print('✅ Plantilla por defecto creada');
         } catch (e) {
           print('❌ Error creando plantilla por defecto: $e');
@@ -109,7 +135,7 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
 
     if (result != null && result.isNotEmpty) {
       try {
-        await CertificateTemplateService.duplicateTemplate(template.id, result);
+        await CertificateTemplateAdapter.duplicateTemplate(template.id, result);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Plantilla duplicada exitosamente')),
         );
@@ -143,7 +169,7 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
 
     if (confirmed == true) {
       try {
-        await CertificateTemplateService.setDefaultTemplate(template.id);
+        await CertificateTemplateAdapter.setDefaultTemplate(template.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Plantilla por defecto actualizada')),
         );
@@ -185,7 +211,7 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
 
     if (confirmed == true) {
       try {
-        await CertificateTemplateService.deleteTemplate(template.id);
+        await CertificateTemplateAdapter.deleteTemplate(template.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Plantilla eliminada exitosamente')),
         );

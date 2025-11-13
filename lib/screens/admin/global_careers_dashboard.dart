@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/user_context_service.dart';
-import '../../services/global_careers_initializer.dart';
-import '../../services/institution_service.dart';
+import '../../services/adapters/careers_adapter.dart';
 import '../../widgets/basic_items_list_widget.dart';
+import '../../services/global_careers_initializer.dart';
+import '../../services/alert_service.dart';
 
 class GlobalCareersDashboard extends StatefulWidget {
   @override
@@ -12,15 +12,12 @@ class GlobalCareersDashboard extends StatefulWidget {
 
 class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
   bool _isLoading = false;
-  bool _showInitializeButton = true;
   String _searchQuery = '';
   TextEditingController _searchController = TextEditingController();
   
   // Variables para crear programa
   final TextEditingController _programNameController = TextEditingController();
   final TextEditingController _programDurationController = TextEditingController();
-  String? _selectedFacultyId;
-  List<Map<String, dynamic>> _faculties = [];
   
   // Controlador para la lista de carreras
   final BasicItemsListWidgetController _careersListController = BasicItemsListWidgetController();
@@ -28,8 +25,6 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
   @override
   void initState() {
     super.initState();
-    _checkIfGlobalCareersExist();
-    _loadFaculties();
   }
 
   @override
@@ -40,58 +35,6 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
     super.dispose();
   }
 
-  Future<void> _checkIfGlobalCareersExist() async {
-    try {
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('programs')
-          .where('isGlobal', isEqualTo: true)
-          .limit(1)
-          .get();
-      
-      setState(() {
-        _showInitializeButton = querySnapshot.docs.isEmpty;
-      });
-    } catch (e) {
-      print('Error verificando carreras globales: $e');
-    }
-  }
-
-  Future<void> _initializeGlobalCareers() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final result = await GlobalCareersInitializer.initializeGlobalCareers();
-      
-      if (result['success']) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Carreras globales inicializadas: ${result['added']} agregadas, ${result['skipped']} ya existían'
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 4),
-          ),
-        );
-        setState(() => _showInitializeButton = false);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Error al inicializar carreras globales'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
 
   Future<void> _addProgramToInstitution(Map<String, dynamic> program) async {
     setState(() => _isLoading = true);
@@ -116,61 +59,58 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
 
     try {
       final userContext = UserContextService.currentContext;
+      
+      print('🔍 DEBUG - Agregando carrera global...');
+      print('   - UserContext: ${userContext != null ? "Existe" : "No existe"}');
+      print('   - InstitutionId: ${userContext?.institutionId}');
+      print('   - InstitutionName: ${userContext?.currentInstitution?.name}');
+      print('   - UserRole: ${userContext?.userRole}');
+      
       if (userContext?.institutionId == null || userContext?.currentInstitution?.name == null) {
+        print('❌ Error: No se pudo obtener la información de la institución');
         throw Exception('No se pudo obtener la información de la institución');
       }
 
       // Verificar si el programa ya existe en la institución
-      final existingPrograms = await FirebaseFirestore.instance
-          .collection('programs')
-          .where('institutionId', isEqualTo: userContext!.institutionId!)
-          .where('name', isEqualTo: program['name'])
-          .get();
+      final existingPrograms = await CareersAdapter.getProgramsByInstitution(userContext!.institutionId!);
+      final programExists = existingPrograms.any((p) => p['name'] == program['name']);
 
-      if (existingPrograms.docs.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('La carrera "${program['name']}" ya existe en tu institución'),
-            backgroundColor: Colors.orange,
-          ),
+      if (programExists) {
+        AlertService.showWarning(
+          context,
+          'Carrera Duplicada',
+          'La carrera "${program['name']}" ya existe en tu institución',
         );
         return;
       }
 
-      // Generar código único para la institución usando InstitutionService
-      final institutionShortName = userContext.currentInstitution?.shortName ?? 'INST';
-      final careerCode = await InstitutionService.generateCareerCode(
-        institutionShortName,
-        program['name'],
+      // Generar código único para la institución
+      final careerCode = await CareersAdapter.generateUniqueProgramCode(userContext.institutionId!);
+
+      // Usar CareersAdapter para crear programa
+      final result = await CareersAdapter.createProgram(
+        name: program['name'],
+        code: careerCode,
+        facultyId: null, // Se asignará cuando se cree la facultad
+        facultyName: 'Sin asignar',
+        institutionId: userContext.institutionId!,
+        institutionName: userContext.currentInstitution!.name,
+        duration: program['duration'] ?? 10,
+        modality: program['modality'] ?? 'presencial',
+        description: program['description'],
       );
 
-      // Agregar el programa a la institución
-      await FirebaseFirestore.instance.collection('programs').add({
-        'name': program['name'],
-        'code': careerCode, // Usar el código de carrera como código principal
-        'careerCode': careerCode, // Código único para vinculación
-        'duration': program['duration'],
-        'modality': program['modality'],
-        'description': program['description'],
-        'category': program['category'],
-        'status': 'active',
-        'institutionId': userContext.institutionId!,
-        'institutionName': userContext.currentInstitution!.name,
-        'facultyId': '', // Se asignará cuando se cree la facultad
-        'facultyName': '',
-        'facultyCode': '',
-        'isGlobal': false, // Marcar como programa de la institución
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Error creando programa');
+      }
 
       // Cerrar diálogo de carga
       Navigator.of(context).pop();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Carrera "${program['name']}" agregada a tu institución con código: $careerCode'),
-          backgroundColor: Colors.green,
-        ),
+      AlertService.showSuccess(
+        context,
+        'Carrera Agregada',
+        'La carrera "${program['name']}" ha sido agregada a tu institución con código: $careerCode',
       );
 
       // Recargar la lista de carreras para que no aparezca la carrera agregada
@@ -180,11 +120,10 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
       // Cerrar diálogo de carga en caso de error
       Navigator.of(context).pop();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+      AlertService.showError(
+        context,
+        'Error',
+        'Error: $e',
       );
     } finally {
       setState(() => _isLoading = false);
@@ -192,43 +131,13 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
   }
 
 
-  Future<void> _loadFaculties() async {
-    try {
-      final userContext = UserContextService.currentContext;
-      if (userContext?.institutionId == null) return;
-
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('faculties')
-          .where('institutionId', isEqualTo: userContext!.institutionId)
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      setState(() {
-        _faculties = querySnapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'id': doc.id,
-            'name': data['name'] ?? 'Sin nombre',
-            'code': data['code'] ?? '',
-            'description': data['description'] ?? '',
-            'institutionId': data['institutionId'] ?? '',
-            'institutionName': data['institutionName'] ?? '',
-            'status': data['status'] ?? 'active',
-            'createdAt': data['createdAt'],
-            'programsCount': data['programsCount'] ?? 0,
-          };
-        }).toList();
-      });
-    } catch (e) {
-      print('Error cargando facultades: $e');
-    }
-  }
 
   Future<void> _createProgram() async {
-    if (_programNameController.text.isEmpty || 
-        _selectedFacultyId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor completa el nombre del programa y selecciona una facultad')),
+    if (_programNameController.text.isEmpty) {
+      AlertService.showWarning(
+        context,
+        'Campo Requerido',
+        'Por favor completa el nombre del programa',
       );
       return;
     }
@@ -242,67 +151,76 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
       final userContext = UserContextService.currentContext;
       if (userContext?.institutionId == null) {
         print('Error: No se pudo obtener el contexto de institución');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: No se pudo obtener la información de la institución')),
+        AlertService.showError(
+          context,
+          'Error',
+          'No se pudo obtener la información de la institución',
         );
         return;
       }
 
       final institutionId = userContext!.institutionId!;
       final institutionName = userContext.currentInstitution?.name ?? 'Institución';
-      final institutionShortName = userContext.currentInstitution?.shortName ?? 'INST';
 
-      // Obtener información de la facultad
-      final faculty = _faculties.firstWhere((f) => f['id'] == _selectedFacultyId);
+      // Validar que el nombre no exista en las carreras globales disponibles
+      final programName = _programNameController.text.trim();
+      final globalCareers = GlobalCareersInitializer.globalCareers;
+      final programNameLower = programName.toLowerCase();
+      
+      final existsInGlobalCareers = globalCareers.any((career) {
+        final careerName = (career['name'] ?? '').toString().toLowerCase().trim();
+        return careerName == programNameLower;
+      });
+
+      if (existsInGlobalCareers) {
+        setState(() {
+          _isLoading = false;
+        });
+        AlertService.showWarning(
+          context,
+          'Programa Duplicado',
+          'No se puede crear un programa personalizado con el nombre "$programName" porque ya existe en las carreras globales disponibles. Por favor, agrega esa carrera desde la lista de carreras disponibles.',
+        );
+        return;
+      }
 
       // Generar código de carrera automáticamente
-      final careerCode = await InstitutionService.generateCareerCode(
-        institutionShortName,
-        _programNameController.text.trim(),
+      final careerCode = await CareersAdapter.generateUniqueProgramCode(institutionId);
+
+      // Usar CareersAdapter para crear programa
+      final result = await CareersAdapter.createProgram(
+        name: _programNameController.text.trim(),
+        code: careerCode,
+        facultyId: null, // Sin facultad asignada
+        facultyName: 'Sin asignar',
+        institutionId: institutionId,
+        institutionName: institutionName,
+        duration: int.tryParse(_programDurationController.text) ?? 10,
+        modality: 'presencial',
+        description: null,
       );
 
-      // Crear nuevo programa con código de carrera
-      await FirebaseFirestore.instance.collection('programs').add({
-        'name': _programNameController.text.trim(),
-        'code': careerCode, // Usar el código de carrera como código principal
-        'careerCode': careerCode, // Código único para vinculación
-        'duration': int.tryParse(_programDurationController.text) ?? 10,
-        'modality': 'presencial',
-        'status': 'active',
-        'facultyId': _selectedFacultyId,
-        'facultyName': faculty['name'],
-        'facultyCode': faculty['code'],
-        'institutionId': institutionId,
-        'institutionName': institutionName,
-        'isGlobal': false, // Programa personalizado, no global
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // Actualizar contador de programas en la facultad
-      await FirebaseFirestore.instance.collection('faculties').doc(_selectedFacultyId).update({
-        'programsCount': FieldValue.increment(1),
-      });
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Error creando programa');
+      }
 
       // Limpiar campos
       _programNameController.clear();
       _programDurationController.clear();
-      _selectedFacultyId = null;
-
-      // Recargar facultades
-      await _loadFaculties();
 
       // Mostrar mensaje de éxito
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Programa creado exitosamente con código: $careerCode'),
-          backgroundColor: Colors.green,
-        ),
+      AlertService.showSuccess(
+        context,
+        'Programa Creado',
+        'El programa ha sido creado exitosamente con código: $careerCode',
       );
 
     } catch (e) {
       print('Error creando programa: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error creando programa: $e')),
+      AlertService.showError(
+        context,
+        'Error',
+        'Error creando programa: $e',
       );
     } finally {
       setState(() {
@@ -365,28 +283,6 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
                         ),
                       ],
                     ),
-                  ),
-                  SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: _selectedFacultyId,
-                    decoration: InputDecoration(
-                      labelText: 'Facultad *',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      prefixIcon: Icon(Icons.school),
-                    ),
-                    items: _faculties.map((faculty) {
-                      return DropdownMenuItem<String>(
-                        value: faculty['id'],
-                        child: Text('${faculty['code']} - ${faculty['name']}'),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedFacultyId = value;
-                      });
-                    },
                   ),
                   SizedBox(height: 16),
                   TextField(
@@ -598,74 +494,6 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
                       ],
                     ),
                     SizedBox(height: 16),
-                    
-                    // Botón de inicialización (solo si no existen carreras globales)
-                    if (_showInitializeButton) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange[200]!),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.info_outline, color: Colors.orange[600]),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Primera vez usando Carreras Globales',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange[800],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Inicializa la base de datos con carreras predefinidas',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange[700],
-                              ),
-                            ),
-                            SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _isLoading ? null : _initializeGlobalCareers,
-                                icon: _isLoading 
-                                    ? SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      )
-                                    : Icon(Icons.add_circle_outline, size: 16),
-                                label: Text(_isLoading ? 'Inicializando...' : 'Inicializar Carreras Globales'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange[600],
-                                  foregroundColor: Colors.white,
-                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                    ],
                     
                     // Botón de crear programa personalizado
                     SizedBox(
@@ -927,74 +755,6 @@ class _GlobalCareersDashboardState extends State<GlobalCareersDashboard> {
                 ],
               ),
               SizedBox(height: 16),
-              
-              // Botón de inicialización (solo si no existen carreras globales)
-              if (_showInitializeButton) ...[
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange[200]!),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.orange[600]),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Primera vez usando Carreras Globales',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.orange[800],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Inicializa la base de datos con carreras predefinidas',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.orange[700],
-                        ),
-                      ),
-                      SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _initializeGlobalCareers,
-                          icon: _isLoading 
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                  ),
-                                )
-                              : Icon(Icons.add_circle_outline, size: 16),
-                          label: Text(_isLoading ? 'Inicializando...' : 'Inicializar Carreras Globales'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange[600],
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 16),
-              ],
               
               // Botón de crear programa personalizado
               SizedBox(

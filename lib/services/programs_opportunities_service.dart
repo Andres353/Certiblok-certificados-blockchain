@@ -90,7 +90,7 @@ class ProgramsOpportunitiesService {
         try {
           print('📄 [DEBUG] Procesando: ${doc.id}');
           print('📋 [DEBUG] Datos: ${doc.data()}');
-          final program = ProgramOpportunity.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
+          final program = ProgramOpportunity.fromFirestore(doc.data(), doc.id);
           programs.add(program);
         } catch (e) {
           print('❌ [DEBUG] Error en ${doc.id}: $e');
@@ -149,6 +149,9 @@ class ProgramsOpportunitiesService {
         throw Exception('No tienes permisos para crear programas');
       }
 
+      // Todos los PDFs se almacenan como base64 en Firestore
+      print('📄 PDF almacenado como base64 en Firestore');
+
       final now = DateTime.now();
       final docRef = await _firestore.collection(_collection).add({
         'title': title,
@@ -178,6 +181,7 @@ class ProgramsOpportunitiesService {
       print('✅ Programa creado exitosamente: ${docRef.id}');
       return docRef.id;
     } catch (e) {
+      print('❌ Error creando programa: $e');
       throw Exception('Error al crear programa: $e');
     }
   }
@@ -249,7 +253,7 @@ class ProgramsOpportunitiesService {
           .get();
 
       return querySnapshot.docs
-          .map((doc) => ProgramOpportunity.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
+          .map((doc) => ProgramOpportunity.fromFirestore(doc.data(), doc.id))
           .toList();
     } catch (e) {
       throw Exception('Error al obtener programas de la institución: $e');
@@ -372,6 +376,43 @@ class ProgramsOpportunitiesService {
     } catch (e) {
       print('Error verificando si puede postularse: $e');
       return false;
+    }
+  }
+
+  // Obtener programas por institución
+  static Future<List<ProgramOpportunity>> getProgramsByInstitution(String institutionId) async {
+    try {
+      print('🔄 Obteniendo programas por institución: $institutionId');
+      
+      final querySnapshot = await _firestore
+          .collection(_collection)
+          .where('institutionId', isEqualTo: institutionId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return querySnapshot.docs
+          .map((doc) => ProgramOpportunity.fromFirestore(doc.data(), doc.id))
+          .toList();
+    } catch (e) {
+      print('❌ Error obteniendo programas por institución: $e');
+      return [];
+    }
+  }
+
+  // Eliminar programa
+  static Future<void> deleteProgram(String programId) async {
+    try {
+      print('🔄 Eliminando programa: $programId');
+      
+      await _firestore
+          .collection(_collection)
+          .doc(programId)
+          .delete();
+
+      print('✅ Programa eliminado');
+    } catch (e) {
+      print('❌ Error eliminando programa: $e');
+      throw Exception('Error eliminando programa: $e');
     }
   }
 }

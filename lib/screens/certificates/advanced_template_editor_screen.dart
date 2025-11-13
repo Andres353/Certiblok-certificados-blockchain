@@ -9,7 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:math' as math;
-import '../../services/certificate_template_service.dart';
+import '../../services/adapters/certificate_template_adapter.dart';
 import '../../services/alert_service.dart';
 import '../../models/certificate_template.dart';
 
@@ -202,27 +202,72 @@ class _AdvancedTemplateEditorScreenState extends State<AdvancedTemplateEditorScr
       // Crear campos con los textos personalizados
       final fields = _createTemplateFields();
 
+      // Procesar logo de la institución si hay bytes seleccionados
+      String finalInstitutionLogoUrl = _currentDesign.institutionLogoUrl;
+      if (_institutionLogoBytes != null) {
+        print('🔄 Procesando logo de la institución para guardar...');
+        finalInstitutionLogoUrl = 'data:image/jpeg;base64,${base64Encode(_institutionLogoBytes!)}';
+        print('✅ Logo convertido a base64: ${finalInstitutionLogoUrl.length} caracteres');
+      }
+
+      // Procesar imagen de fondo si hay bytes seleccionados
+      String finalCertificateBackgroundUrl = _currentDesign.certificateBackgroundUrl;
+      if (_backgroundImageBytes != null) {
+        print('🔄 Procesando imagen de fondo para guardar...');
+        finalCertificateBackgroundUrl = 'data:image/jpeg;base64,${base64Encode(_backgroundImageBytes!)}';
+        print('✅ Imagen de fondo convertida a base64: ${finalCertificateBackgroundUrl.length} caracteres');
+      }
+
+      // Crear diseño final con las URLs procesadas
+      final finalDesign = TemplateDesign(
+        primaryColor: _currentDesign.primaryColor,
+        secondaryColor: _currentDesign.secondaryColor,
+        backgroundColor: _currentDesign.backgroundColor,
+        textColor: _currentDesign.textColor,
+        headerBackgroundColor: _currentDesign.headerBackgroundColor,
+        headerTextColor: _currentDesign.headerTextColor,
+        borderColor: _currentDesign.borderColor,
+        borderWidth: _currentDesign.borderWidth,
+        borderRadius: _currentDesign.borderRadius,
+        fontFamily: _currentDesign.fontFamily,
+        titleFontSize: _currentDesign.titleFontSize,
+        subtitleFontSize: _currentDesign.subtitleFontSize,
+        bodyFontSize: _currentDesign.bodyFontSize,
+        smallFontSize: _currentDesign.smallFontSize,
+        logoUrl: _currentDesign.logoUrl,
+        backgroundImageUrl: _currentDesign.backgroundImageUrl,
+        backgroundOpacity: _currentDesign.backgroundOpacity,
+        titleFontFamily: _currentDesign.titleFontFamily,
+        subtitleFontFamily: _currentDesign.subtitleFontFamily,
+        bodyFontFamily: _currentDesign.bodyFontFamily,
+        smallFontFamily: _currentDesign.smallFontFamily,
+        institutionLogoUrl: finalInstitutionLogoUrl,
+        certificateBackgroundUrl: finalCertificateBackgroundUrl,
+        logoOpacity: _currentDesign.logoOpacity,
+        logoPosition: _currentDesign.logoPosition,
+      );
+
       if (widget.template != null) {
         // Actualizar plantilla existente
         final updatedTemplate = _currentTemplate.copyWith(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
-          design: _currentDesign,
+          design: finalDesign,
           layout: _currentLayout,
           fields: fields,
           updatedAt: DateTime.now(),
         );
 
-        await CertificateTemplateService.updateTemplate(
+        await CertificateTemplateAdapter.updateTemplate(
           _currentTemplate.id,
           updatedTemplate,
         );
       } else {
         // Crear nueva plantilla
-        await CertificateTemplateService.createTemplate(
+        await CertificateTemplateAdapter.createTemplate(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
-          design: _currentDesign,
+          design: finalDesign,
           layout: _currentLayout,
           fields: fields,
         );
@@ -230,7 +275,9 @@ class _AdvancedTemplateEditorScreenState extends State<AdvancedTemplateEditorScr
 
       AlertService.showSuccess(context, 'Éxito', widget.template != null ? 'Plantilla actualizada' : 'Plantilla creada');
 
+      // Redirigir a gestión de plantillas después de guardar
       Navigator.pop(context, true);
+      Navigator.pop(context, true); // Pop adicional para volver a gestión de plantillas
     } catch (e) {
       AlertService.showError(context, 'Error', 'Error guardando plantilla: $e');
     } finally {

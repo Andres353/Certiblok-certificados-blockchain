@@ -197,6 +197,25 @@ class ImageUploadService {
       print('🔄 Procesando PDF para pasantías (mismo método que certificados)...');
       print('📊 Tamaño del archivo: ${pdfBytes.length} bytes');
       
+      // Verificar límite de Firestore (1MB por documento, ~700KB para base64)
+      // Límite más conservador para evitar errores de Firestore
+      const int maxFirestoreSize = 700000; // 700KB para base64
+      if (pdfBytes.length > maxFirestoreSize) {
+        print('⚠️ PDF grande detectado (${pdfBytes.length} bytes > $maxFirestoreSize)');
+        print('🔄 Aplicando compresión y optimización...');
+        
+        // Aplicar compresión más agresiva
+        final compressedBytes = await _compressPdfAggressive(pdfBytes);
+        if (compressedBytes.length <= maxFirestoreSize) {
+          print('✅ PDF comprimido exitosamente: ${compressedBytes.length} bytes');
+          pdfBytes = compressedBytes;
+        } else {
+          print('❌ PDF sigue siendo muy grande después de compresión: ${compressedBytes.length} bytes');
+          print('💡 Sugerencia: Comprime el PDF manualmente o usa un archivo más pequeño');
+          throw Exception('El PDF es demasiado grande (${(pdfBytes.length / 1024).toStringAsFixed(1)}KB). El límite es ${(maxFirestoreSize / 1024).toStringAsFixed(1)}KB. Por favor, comprime el PDF manualmente o usa un archivo más pequeño.');
+        }
+      }
+      
       // Simular progreso de procesamiento (igual que certificados)
       await Future.delayed(Duration(milliseconds: 1500));
       
@@ -216,4 +235,36 @@ class ImageUploadService {
       throw Exception('Error al procesar PDF: $e');
     }
   }
+
+  // Comprimir PDF de forma agresiva
+  static Future<Uint8List> _compressPdfAggressive(Uint8List pdfBytes) async {
+    try {
+      print('🔄 Aplicando compresión agresiva al PDF...');
+      
+      // Estrategia de compresión agresiva:
+      // 1. Intentar reducir la calidad de las imágenes dentro del PDF
+      // 2. Eliminar metadatos innecesarios
+      // 3. Optimizar la estructura del PDF
+      
+      // Por ahora, implementamos una compresión básica simulada
+      // En el futuro se podría usar: pdf_compress, flutter_pdfview, etc.
+      
+      // Simular compresión del 20-30%
+      final double compressionRatio = 0.75; // Reducir a 75% del tamaño original
+      final int targetSize = (pdfBytes.length * compressionRatio).round();
+      
+      print('📊 Tamaño original: ${pdfBytes.length} bytes');
+      print('🎯 Tamaño objetivo: $targetSize bytes');
+      
+      // Simular compresión (en realidad no comprime, solo para demostración)
+      print('⚠️ Compresión real no implementada, retornando archivo original');
+      print('💡 Para PDFs grandes, comprime manualmente usando herramientas online');
+      
+      return pdfBytes;
+    } catch (e) {
+      print('❌ Error en compresión agresiva: $e');
+      return pdfBytes; // Retornar original en caso de error
+    }
+  }
+
 }

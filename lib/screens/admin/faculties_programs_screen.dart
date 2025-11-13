@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/user_context_service.dart';
+import '../../services/adapters/careers_adapter.dart';
 import 'global_careers_dashboard.dart';
 
 class ProgramsScreen extends StatefulWidget {
@@ -10,8 +10,6 @@ class ProgramsScreen extends StatefulWidget {
 }
 
 class _ProgramsScreenState extends State<ProgramsScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
   bool _isLoading = false;
   List<Map<String, dynamic>> _programs = [];
 
@@ -46,21 +44,8 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
       final institutionId = userContext!.institutionId!;
       print('Cargando programas para institución: $institutionId');
 
-      QuerySnapshot querySnapshot = await _firestore
-          .collection('programs')
-          .where('institutionId', isEqualTo: institutionId)
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      setState(() {
-        _programs = querySnapshot.docs
-            .map((doc) => {
-                  'id': doc.id,
-                  ...doc.data() as Map<String, dynamic>,
-                })
-            .toList()
-          ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
-      });
+      // Usar CareersAdapter para cargar programas
+      _programs = await CareersAdapter.getProgramsByInstitution(institutionId);
 
       print('Programas cargados: ${_programs.length}');
     } catch (e) {
@@ -72,6 +57,26 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _copyProgramCode(String programCode) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: programCode));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Código copiado: $programCode'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al copiar código'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -100,26 +105,23 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
       });
 
       try {
-      await _firestore.collection('programs').doc(programId).update({
-        'status': 'inactive',
-          'deletedAt': Timestamp.now(),
-        });
+        await CareersAdapter.deleteProgram(programId);
         
         ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+          SnackBar(
             content: Text('Programa eliminado exitosamente'),
             backgroundColor: Colors.green,
-        ),
+          ),
         );
 
         _loadPrograms();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+          SnackBar(
             content: Text('Error eliminando programa: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+            backgroundColor: Colors.red,
+          ),
+        );
       } finally {
         setState(() {
           _isLoading = false;
@@ -224,25 +226,46 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
               
               SizedBox(height: 6),
               
-              // Código del programa
+              // Código del programa con botón de copiar
               Center(
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: _getProgramColor(program['name'] ?? '').withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: _getProgramColor(program['name'] ?? '').withOpacity(0.3),
+                child: GestureDetector(
+                  onTap: () {
+                    final code = program['program_code'] ?? program['code'] ?? 'N/A';
+                    if (code != 'N/A') {
+                      _copyProgramCode(code);
+                    }
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _getProgramColor(program['name'] ?? '').withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: _getProgramColor(program['name'] ?? '').withOpacity(0.3),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    'Código: ${program['code'] ?? 'N/A'}',
-                    style: TextStyle(
-                      color: _getProgramColor(program['name'] ?? ''),
-                      fontSize: isWeb ? 11 : 9,
-                      fontWeight: FontWeight.w600,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Código: ${program['program_code'] ?? program['code'] ?? 'N/A'}',
+                          style: TextStyle(
+                            color: _getProgramColor(program['name'] ?? ''),
+                            fontSize: isWeb ? 11 : 9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        if ((program['program_code'] ?? program['code'] ?? 'N/A') != 'N/A') ...[
+                          SizedBox(width: 4),
+                          Icon(
+                            Icons.copy,
+                            size: 12,
+                            color: _getProgramColor(program['name'] ?? ''),
+                          ),
+                        ],
+                      ],
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ),
               ),

@@ -2,11 +2,12 @@
 // Pantalla de login simplificada
 
 import 'package:flutter/material.dart';
-import '../../services/auth_service.dart';
+import '../../services/adapters/auth_adapter.dart';
 import '../../services/alert_service.dart';
 import '../home_page.dart';
 import 'change_password_page.dart';
 import 'password_reset_screen.dart';
+import '../../services/supabase/setup_auth.dart';
 
 class LoginWithInstitution extends StatefulWidget {
   @override
@@ -28,7 +29,7 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
     setState(() => _isLoading = true);
 
     try {
-      final userContext = await loginWithContext(
+      final userContext = await AuthAdapter.loginWithContext(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
@@ -62,10 +63,180 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
     AlertService.showError(context, 'Error', message);
   }
 
+  void _showSupabaseConfig() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Configuración Supabase'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Selecciona el sistema de autenticación:'),
+            SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _activateSupabase(),
+                  icon: Icon(Icons.cloud),
+                  label: Text('Supabase'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _deactivateSupabase(),
+                  icon: Icon(Icons.local_fire_department),
+                  label: Text('Firebase'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _activateSupabase() async {
+    Navigator.of(context).pop(); // Cerrar diálogo
+    
+    // Mostrar diálogo de carga
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Activando Supabase...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      await SetupAuth.setupComplete();
+      
+      Navigator.of(context).pop(); // Cerrar diálogo de carga
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Supabase Activado'),
+          content: Text('Autenticación Supabase activada.\n\n👑 Super Admin:\n📧 admin@certiblock.com\n🔑 AdminPassword123!\n\n👤 Usuario de prueba:\n📧 test@certiblock.com\n🔑 TestPassword123!'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      Navigator.of(context).pop(); // Cerrar diálogo de carga
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Error'),
+          content: Text('Error al activar Supabase: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _deactivateSupabase() async {
+    Navigator.of(context).pop(); // Cerrar diálogo
+    
+    // Mostrar diálogo de confirmación
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Volver a Firebase'),
+        content: Text('¿Estás seguro de que quieres volver a Firebase?\n\nEsto cambiará toda la autenticación a Firebase.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Sí, volver a Firebase'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Desactivar Supabase
+      await SetupAuth.disableSupabaseAuth();
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Firebase Activado'),
+          content: Text('Se ha vuelto a Firebase exitosamente.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Error'),
+          content: Text('Error al volver a Firebase: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.settings, color: Color(0xff6C4DDC)),
+            onPressed: _showSupabaseConfig,
+            tooltip: 'Configurar Supabase',
+          ),
+        ],
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: EdgeInsets.all(24),

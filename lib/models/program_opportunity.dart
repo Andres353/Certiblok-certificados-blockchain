@@ -82,6 +82,34 @@ class ProgramOpportunity {
     );
   }
 
+  factory ProgramOpportunity.fromSupabase(Map<String, dynamic> data) {
+    return ProgramOpportunity(
+      id: data['id'] ?? '',
+      title: data['title'] ?? '',
+      description: data['description'] ?? '',
+      institutionId: data['institution_id'] ?? '',
+      institutionName: data['institution_name'] ?? '',
+      facultyId: data['faculty_id'] ?? '',
+      facultyName: data['faculty_name'] ?? '',
+      careerIds: List<String>.from(data['career_ids'] ?? []),
+      careerNames: List<String>.from(data['career_names'] ?? []),
+      requirements: List<String>.from(data['requirements'] ?? []),
+      isActive: data['is_active'] ?? true,
+      applicationDeadline: DateTime.tryParse(data['application_deadline'] ?? '') ?? DateTime.now(),
+      maxApplications: data['max_applications'] ?? 0,
+      currentApplications: data['current_applications'] ?? 0,
+      createdBy: data['created_by'] ?? '',
+      createdByName: data['created_by_name'] ?? '',
+      createdAt: DateTime.tryParse(data['created_at'] ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(data['updated_at'] ?? '') ?? DateTime.now(),
+      additionalInfo: Map<String, dynamic>.from(data['additional_info'] ?? {}),
+      imageUrl: data['image_url'],
+      pdfUrl: data['pdf_url'],
+      pdfFileName: data['pdf_file_name'],
+      pdfData: data['pdf_data'],
+    );
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'title': title,

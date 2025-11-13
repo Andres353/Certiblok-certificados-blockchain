@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../constants/roles.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/user_context_service.dart';
+import '../../services/institution_status_service.dart';
+import '../../widgets/suspended_institution_widget.dart';
 import 'join_institution_screen.dart';
+import 'share_certificates_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   @override
@@ -27,46 +29,65 @@ class _StudentDashboardState extends State<StudentDashboard> {
     // Cargar contexto desde SharedPreferences
     final context = await UserContextService.loadUserContext();
     
-    // Si el usuario está logueado, cargar datos actualizados desde Firestore
+    // Si el usuario está logueado, cargar datos actualizados desde Supabase
     if (context != null) {
       try {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(context.userId)
-            .get();
+        final supabase = Supabase.instance.client;
+        final userResponse = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', context.userId)
+            .single();
             
-        if (userDoc.exists) {
-          final userData = userDoc.data()!;
-          
-          // Crear nuevo contexto con datos actualizados
-          final updatedContext = UserContext(
-            userId: userData['userId'] ?? context.userId,
-            userRole: userData['role'] ?? context.userRole,
-            institutionId: userData['institutionId'],
-            institutionName: userData['institutionName'],
-            institution: userData['institution'],
-            currentInstitution: context.currentInstitution,
-            userEmail: userData['email'] ?? context.userEmail,
-            userName: userData['fullName'] ?? context.userName,
-            mustChangePassword: userData['mustChangePassword'] ?? context.mustChangePassword,
-            isTemporaryPassword: userData['isTemporaryPassword'] ?? context.isTemporaryPassword,
-            program: userData['program'],
-            programId: userData['programId'],
-          );
-          
-          // Actualizar el contexto en el servicio
-          await UserContextService.setUserContext(updatedContext);
-          
-          setState(() {
-            _userContext = updatedContext;
-            _isLoading = false;
-          });
-        } else {
-          setState(() {
-            _userContext = context;
-            _isLoading = false;
-          });
+        print('🔍 DEBUG - Datos del usuario desde Supabase:');
+        print('   - ID: ${userResponse['id']}');
+        print('   - Email: ${userResponse['email']}');
+        print('   - Institution ID: ${userResponse['institution_id']}');
+        print('   - Institution Name: ${userResponse['institution_name']}');
+        print('   - Program: ${userResponse['program']}');
+        print('   - Program ID: ${userResponse['program_id']}');
+        
+        // Crear nuevo contexto con datos actualizados
+        final updatedContext = UserContext(
+          userId: userResponse['id'] ?? context.userId,
+          userRole: userResponse['role'] ?? context.userRole,
+          institutionId: userResponse['institution_id'],
+          institutionName: userResponse['institution_name'],
+          institution: userResponse['institution_name'],
+          currentInstitution: context.currentInstitution,
+          userEmail: userResponse['email'] ?? context.userEmail,
+          userName: userResponse['full_name'] ?? context.userName,
+          mustChangePassword: userResponse['must_change_password'] ?? context.mustChangePassword,
+          isTemporaryPassword: userResponse['is_temporary_password'] ?? context.isTemporaryPassword,
+          program: userResponse['program'],
+          programId: userResponse['program_id'],
+        );
+        
+        // Actualizar el contexto en el servicio
+        await UserContextService.setUserContext(updatedContext);
+        
+        print('🔍 DEBUG - Contexto actualizado:');
+        print('   - Institution ID: ${updatedContext.institutionId}');
+        print('   - Institution Name: ${updatedContext.institutionName}');
+        print('   - Institution: ${updatedContext.institution}');
+        print('   - Program: ${updatedContext.program}');
+        
+        // Verificar si la institución está suspendida
+        if (updatedContext.institutionId != null) {
+          final isSuspended = await InstitutionStatusService.isInstitutionSuspended(updatedContext.institutionId!);
+          if (isSuspended) {
+            setState(() {
+              _userContext = updatedContext;
+              _isLoading = false;
+            });
+            return; // Mostrar pantalla de suspensión
+          }
         }
+        
+        setState(() {
+          _userContext = updatedContext;
+          _isLoading = false;
+        });
       } catch (e) {
         print('Error cargando datos actualizados: $e');
         setState(() {
@@ -86,6 +107,82 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWeb = screenWidth > 800;
     
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('Cargando...'),
+          backgroundColor: Color(0xff6C4DDC),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xff6C4DDC)),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Cargando tu información...',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Verificar si la institución está suspendida
+    if (_userContext?.institutionId != null) {
+      return FutureBuilder<bool>(
+        future: InstitutionStatusService.isInstitutionSuspended(_userContext!.institutionId!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('Verificando...'),
+                backgroundColor: Color(0xff6C4DDC),
+                foregroundColor: Colors.white,
+              ),
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          
+            if (snapshot.hasData && snapshot.data == true) {
+              return FutureBuilder(
+                future: InstitutionStatusService.getSuspendedInstitutionInfo(_userContext!.institutionId!),
+                builder: (context, institutionSnapshot) {
+                  if (institutionSnapshot.hasData && institutionSnapshot.data != null) {
+                    return SuspendedInstitutionWidget(
+                      institution: institutionSnapshot.data!,
+                      userRole: 'student',
+                    );
+                  }
+                  return Scaffold(
+                    appBar: AppBar(
+                      title: Text('Error'),
+                      backgroundColor: Color(0xff6C4DDC),
+                      foregroundColor: Colors.white,
+                    ),
+                    body: Center(child: Text('Error al cargar información de la institución')),
+                  );
+                },
+              );
+            }
+          
+          // Si no está suspendida, mostrar el dashboard normal
+          return _buildNormalDashboard(context, isWeb);
+        },
+      );
+    }
+    
+    return _buildNormalDashboard(context, isWeb);
+  }
+
+  Widget _buildNormalDashboard(BuildContext context, bool isWeb) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Dashboard del Estudiante'),
@@ -93,17 +190,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: _isLoading 
+      body: _userContext == null
         ? Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xff6C4DDC)),
+                Icon(
+                  Icons.person_off,
+                  size: 64,
+                  color: Colors.grey[400],
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'Cargando tu información...',
+                  'No se pudo cargar la información del usuario',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.grey[600],
@@ -140,15 +239,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    UserRoles.getRoleDescription(UserRoles.STUDENT),
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: isWeb ? 18 : 16,
-                    ),
-                  ),
-                  if (_userContext?.institutionName != null || _userContext?.institution != null) ...[
+                  if (_userContext?.institutionName != null || _userContext?.institution != null || _userContext?.institutionId != null) ...[
                     SizedBox(height: 8),
                     Text(
                       'Estudiante de ${_userContext!.institutionName ?? _userContext!.institution}',
@@ -166,7 +257,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             SizedBox(height: 24),
             
             // Contenido condicional basado en vinculación
-            if (_userContext?.institutionName != null || _userContext?.institution != null) ...[
+            if (_userContext?.institutionName != null || _userContext?.institution != null || _userContext?.institutionId != null) ...[
               // ESTUDIANTE VINCULADO - Mostrar funcionalidades
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -207,11 +298,31 @@ class _StudentDashboardState extends State<StudentDashboard> {
               
               // Grid de funcionalidades responsive
               Expanded(
-                child: GridView.count(
-                  crossAxisCount: isWeb ? 3 : 2,
-                  crossAxisSpacing: isWeb ? 20 : 16,
-                  mainAxisSpacing: isWeb ? 20 : 16,
-                  childAspectRatio: isWeb ? 1.0 : 1.1,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableWidth = constraints.maxWidth;
+                    int crossAxisCount;
+                    double childAspectRatio;
+                    
+                    if (availableWidth > 1600) {
+                      crossAxisCount = 4;
+                      childAspectRatio = 1.3;
+                    } else if (availableWidth > 1200) {
+                      crossAxisCount = 3;
+                      childAspectRatio = 1.2;
+                    } else if (availableWidth > 900) {
+                      crossAxisCount = 2;
+                      childAspectRatio = 1.1;
+                    } else {
+                      crossAxisCount = 2;
+                      childAspectRatio = 1.1;
+                    }
+                    
+                    return GridView.count(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: childAspectRatio,
                   children: [
                     _buildFunctionalityCard(
                       context,
@@ -224,47 +335,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ),
                     _buildFunctionalityCard(
                       context,
-                      'Organizar Documentos',
-                      Icons.folder,
-                      'Organiza y categoriza tus documentos',
-                      () => _showComingSoon(context, 'Organizar Documentos'),
-                      color: Colors.green,
-                      isWeb: isWeb,
-                    ),
-                    _buildFunctionalityCard(
-                      context,
                       'Compartir Certificados',
                       Icons.share,
                       'Comparte certificados por QR o enlace',
-                      () => _showComingSoon(context, 'Compartir Certificados'),
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ShareCertificatesScreen(),
+                        ),
+                      ),
                       color: Colors.orange,
-                      isWeb: isWeb,
-                    ),
-                    _buildFunctionalityCard(
-                      context,
-                      'Descargar PDFs',
-                      Icons.download,
-                      'Descarga tus certificados en PDF',
-                      () => _showComingSoon(context, 'Descargar PDFs'),
-                      color: Colors.red,
-                      isWeb: isWeb,
-                    ),
-                    _buildFunctionalityCard(
-                      context,
-                      'Historial Académico',
-                      Icons.history_edu,
-                      'Consulta tu historial académico completo',
-                      () => _showComingSoon(context, 'Historial Académico'),
-                      color: Colors.purple,
-                      isWeb: isWeb,
-                    ),
-                    _buildFunctionalityCard(
-                      context,
-                      'Estado de Verificación',
-                      Icons.verified,
-                      'Verifica el estado de tus documentos',
-                      () => _showComingSoon(context, 'Estado de Verificación'),
-                      color: Colors.teal,
                       isWeb: isWeb,
                     ),
                     _buildFunctionalityCard(
@@ -286,6 +366,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       isWeb: isWeb,
                     ),
                   ],
+                    );
+                  },
                 ),
               ),
             ] else ...[
@@ -528,21 +610,4 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
   
-  void _showComingSoon(BuildContext context, String feature) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Funcionalidad en Desarrollo'),
-          content: Text('La funcionalidad "$feature" estará disponible próximamente.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Entendido'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }

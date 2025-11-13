@@ -2,23 +2,31 @@
 // Servicio para gestionar postulaciones a programas
 
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../models/application.dart';
 import 'user_context_service.dart';
 import 'programs_opportunities_service.dart';
-import 'certificate_service.dart';
+import 'supabase/supabase_certificate_service.dart';
+import 'supabase/supabase_programs_service.dart';
+import 'image_upload_service.dart';
 
 class ApplicationService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static final FirebaseStorage _storage = FirebaseStorage.instance;
   static const String _collection = 'applications';
+  
+  // Cliente de Supabase
+  static SupabaseClient get _supabase => Supabase.instance.client;
 
   // Crear nueva postulación
   static Future<String> createApplication({
     required String programId,
-    required String cvFilePath,
+    String? cvFilePath,
     required String cvFileName,
+    Uint8List? cvFileBytes, // Bytes del CV para web
     required List<String> selectedCertificates,
     required String motivationLetter,
     String? motivationPdfData,
@@ -36,68 +44,117 @@ class ApplicationService {
         throw Exception('Solo los estudiantes pueden postularse');
       }
 
-      // Obtener información del programa
-      final program = await ProgramsOpportunitiesService.getProgramById(programId);
+      // Obtener información del programa usando Supabase
+      final program = await SupabaseProgramsService.getProgramById(programId);
       if (program == null) {
         throw Exception('Programa no encontrado');
       }
 
       // Verificar que el estudiante puede postularse
-      final canApply = await ProgramsOpportunitiesService.canStudentApply(programId, context.userId);
+      final canApply = await SupabaseProgramsService.canStudentApply(programId, context.userId);
       if (!canApply) {
         throw Exception('No puedes postularte a este programa');
       }
 
       // Subir CV a Firebase Storage
-      final cvUrl = await _uploadCV(cvFilePath, context.userId, cvFileName);
+      final cvUrl = await _uploadCV(cvFilePath, cvFileBytes, context.userId, cvFileName);
 
       // Obtener detalles de los certificados seleccionados
       final certificateDetails = await _getCertificateDetails(selectedCertificates);
 
-      final now = DateTime.now();
-      final docRef = await _firestore.collection(_collection).add({
-        'studentId': context.userId,
-        'studentName': context.userName,
-        'studentEmail': context.userEmail,
-        'programId': programId,
-        'programTitle': program.title,
-        'institutionId': program.institutionId,
-        'institutionName': program.institutionName,
+      print('📋 Programa obtenido: ${program.title}');
+      print('📋 InstitutionId: ${program.institutionId}');
+      print('📋 InstitutionName: ${program.institutionName}');
+      print('📋 CV URL: $cvUrl');
+      print('📋 Context UserName: ${context.userName}');
+      print('📋 Context UserEmail: ${context.userEmail}');
+      print('📋 Context UserId: ${context.userId}');
+
+      // Validar que tenemos todos los datos necesarios
+      if (context.userName.isEmpty || context.userEmail.isEmpty) {
+        throw Exception('Datos del usuario incompletos. Por favor, cierra sesión y vuelve a iniciar.');
+      }
+
+      // Crear postulación en Supabase (no en Firestore)
+      final now = DateTime.now().toIso8601String();
+      final response = await _supabase.from('applications').insert({
+        'student_id': context.userId,
+        'student_name': context.userName,
+        'student_email': context.userEmail,
+        'program_id': programId,
+        'program_title': program.title,
+        'institution_id': program.institutionId,
+        'institution_name': program.institutionName,
         'status': 'pending',
-        'cvUrl': cvUrl,
-        'cvFileName': cvFileName,
-        'selectedCertificates': selectedCertificates,
-        'certificateDetails': certificateDetails,
-        'motivationLetter': motivationLetter,
-        'motivationPdfData': motivationPdfData,
-        'motivationPdfFileName': motivationPdfFileName,
-        'additionalDocuments': additionalDocuments ?? {},
-        'submittedAt': Timestamp.fromDate(now),
-        'createdAt': Timestamp.fromDate(now),
-        'updatedAt': Timestamp.fromDate(now),
-      });
+        'cv_url': cvUrl,
+        'cv_file_name': cvFileName,
+        'selected_certificates': selectedCertificates,
+        'certificate_details': certificateDetails,
+        'motivation_letter': motivationLetter,
+        'motivation_pdf_data': motivationPdfData,
+        'motivation_pdf_file_name': motivationPdfFileName,
+        'additional_documents': additionalDocuments ?? {},
+        'submitted_at': now,
+        'created_at': now,
+        'updated_at': now,
+      }).select('id').single();
+      
+      final applicationId = response['id'] as String;
 
-      // Incrementar contador de aplicaciones del programa
-      await ProgramsOpportunitiesService.incrementApplicationCount(programId);
+      // Incrementar contador de aplicaciones del programa en Supabase
+      try {
+        await SupabaseProgramsService.updateProgram(programId, {
+          'current_applications': program.currentApplications + 1,
+        });
+      } catch (e) {
+        print('⚠️ Error incrementando contador de aplicaciones: $e');
+        // No fallar si hay error incrementando el contador
+      }
 
-      print('✅ Postulación creada exitosamente: ${docRef.id}');
-      return docRef.id;
+      print('✅ Postulación creada exitosamente: $applicationId');
+      return applicationId;
     } catch (e) {
       throw Exception('Error al crear postulación: $e');
     }
   }
 
-  // Subir CV a Firebase Storage
-  static Future<String> _uploadCV(String filePath, String studentId, String fileName) async {
+  // Subir CV usando ImageUploadService (igual que pasantías y certificados)
+  static Future<String> _uploadCV(String? filePath, Uint8List? fileBytes, String studentId, String fileName) async {
     try {
+      print('📤 Subiendo CV: $fileName');
+      print('   StudentId: $studentId');
+      
+      Uint8List bytes;
+      
+      if (fileBytes != null) {
+        print('   Usando bytes proporcionados');
+        bytes = fileBytes;
+      } else if (filePath != null) {
+        print('   Usando path, leyendo bytes...');
       final file = File(filePath);
-      final ref = _storage.ref().child('applications/cv/$studentId/$fileName');
+        bytes = await file.readAsBytes();
+        print('   Bytes leídos: ${bytes.length} bytes');
+      } else {
+        throw Exception('No se proporcionó archivo CV');
+      }
       
-      final uploadTask = await ref.putFile(file);
-      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      // Validar tamaño (igual que PDFs de programas: max 700KB)
+      const int maxSize = 700000; // 700KB para base64
+      if (bytes.length > maxSize) {
+        throw Exception('El CV es demasiado grande (${(bytes.length / 1024).toStringAsFixed(1)}KB). El límite es ${(maxSize / 1024).toStringAsFixed(1)}KB. Por favor, comprime el archivo o usa uno más pequeño.');
+      }
       
-      return downloadUrl;
-    } catch (e) {
+      // Procesar PDF usando el mismo método que certificados y pasantías (base64 puro)
+      final pdfData = await ImageUploadService.uploadPdfBytes(
+        bytes,
+        'applications/cv/$studentId/$fileName',
+      );
+      
+      print('✅ CV procesado exitosamente (base64)');
+      return pdfData; // Retornar base64 string como URL (igual que pasantías)
+    } catch (e, stackTrace) {
+      print('❌ Error al subir CV: $e');
+      print('Stack trace: $stackTrace');
       throw Exception('Error al subir CV: $e');
     }
   }
@@ -105,12 +162,15 @@ class ApplicationService {
   // Obtener detalles de certificados seleccionados
   static Future<List<Map<String, dynamic>>> _getCertificateDetails(List<String> certificateIds) async {
     try {
+      print('📜 Obteniendo detalles de ${certificateIds.length} certificados');
       final details = <Map<String, dynamic>>[];
       
       for (String certId in certificateIds) {
         try {
-          final certificate = await CertificateService.getCertificateById(certId);
+          print('   Obteniendo certificado: $certId');
+          final certificate = await SupabaseCertificateService.getCertificate(certId);
           if (certificate != null) {
+            print('   ✅ Certificado encontrado: ${certificate.title}');
             details.add({
               'id': certificate.id,
               'title': certificate.title,
@@ -118,15 +178,19 @@ class ApplicationService {
               'issuedAt': certificate.issuedAt.toIso8601String(),
               'institutionName': certificate.institutionName,
             });
+          } else {
+            print('   ⚠️ Certificado no encontrado: $certId');
           }
         } catch (e) {
-          print('Error obteniendo certificado $certId: $e');
+          print('❌ Error obteniendo certificado $certId: $e');
         }
       }
       
+      print('📜 Total de certificados obtenidos: ${details.length}');
       return details;
-    } catch (e) {
-      print('Error obteniendo detalles de certificados: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error obteniendo detalles de certificados: $e');
+      print('Stack trace: $stackTrace');
       return [];
     }
   }
@@ -139,15 +203,17 @@ class ApplicationService {
         throw Exception('Usuario no autenticado');
       }
 
-      final querySnapshot = await _firestore
-          .collection(_collection)
-          .where('studentId', isEqualTo: context.userId)
-          .orderBy('submittedAt', descending: true)
-          .get();
+      final response = await _supabase
+          .from('applications')
+          .select('*')
+          .eq('student_id', context.userId)
+          .order('submitted_at', ascending: false);
 
-      return querySnapshot.docs
-          .map((doc) => Application.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
-          .toList();
+      if (response.isEmpty) {
+        return [];
+      }
+
+      return (response as List).map((doc) => Application.fromSupabase(doc as Map<String, dynamic>)).toList();
     } catch (e) {
       throw Exception('Error al obtener postulaciones: $e');
     }
@@ -169,32 +235,80 @@ class ApplicationService {
         throw Exception('No tienes permisos para ver postulaciones');
       }
 
-      Query query = _firestore.collection(_collection);
+      // Construir consulta en Supabase
+      var query = _supabase.from('applications').select('*');
 
       // Si no es super admin, filtrar por institución
       if (!context.isSuperAdmin) {
         final institutionId = context.institutionId;
         if (institutionId != null) {
-          query = query.where('institutionId', isEqualTo: institutionId);
+          query = query.eq('institution_id', institutionId);
         }
       }
 
       // Aplicar filtros adicionales
       if (programId != null) {
-        query = query.where('programId', isEqualTo: programId);
+        query = query.eq('program_id', programId);
       }
       if (status != null) {
-        query = query.where('status', isEqualTo: status);
+        query = query.eq('status', status);
       }
 
-      final querySnapshot = await query
-          .orderBy('submittedAt', descending: true)
-          .get();
+      // Ejecutar la consulta y ordenar
+      var response = await query.order('submitted_at', ascending: false);
 
-      return querySnapshot.docs
-          .map((doc) => Application.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
-          .toList();
+      // Convertir a objetos Application
+      if (response.isEmpty) {
+        return [];
+      }
+      
+      var allApplications = (response as List).map((doc) => Application.fromSupabase(doc as Map<String, dynamic>)).toList();
+
+      // Si es super admin, retornar todas las aplicaciones
+      if (context.isSuperAdmin) {
+        return allApplications;
+      }
+
+      // Para admin_institution: mostrar todas las aplicaciones de su institución
+      // Para emisor: filtrar por programas creados por el usuario
+      if (context.userRole == 'admin_institution') {
+        // Los administradores ven todas las aplicaciones de su institución
+        print('📊 Administrador: mostrando todas las aplicaciones de la institución');
+        return allApplications;
+      }
+
+      // Para emisor, filtrar por programas creados por el usuario
+      print('🔍 Emisor: Filtrando aplicaciones por usuario: ${context.userId}');
+      
+      final userPrograms = await _supabase
+          .from('programs_opportunities')
+          .select('id')
+          .eq('created_by', context.userId);
+
+      print('📊 Programas creados por el usuario: ${(userPrograms as List).length}');
+
+      if (userPrograms.isEmpty) {
+        // El usuario no ha creado ningún programa, retornar lista vacía
+        print('⚠️ El usuario no ha creado ningún programa');
+        return [];
+      }
+
+      final userProgramIds = (userPrograms as List).map((p) => p['id'].toString()).toSet();
+      print('📋 IDs de programas del usuario: $userProgramIds');
+
+      // Filtrar aplicaciones solo para programas creados por el usuario
+      final filteredApplications = allApplications.where((app) {
+        final matches = userProgramIds.contains(app.programId);
+        if (matches) {
+          print('✅ Aplicación ${app.id} pertenece a programa ${app.programId} del usuario');
+        }
+        return matches;
+      }).toList();
+
+      print('📊 Total aplicaciones filtradas: ${filteredApplications.length}');
+      return filteredApplications;
     } catch (e) {
+      print('❌ Error obteniendo postulaciones: $e');
       throw Exception('Error al obtener postulaciones de la institución: $e');
     }
   }
@@ -230,27 +344,272 @@ class ApplicationService {
         throw Exception('No tienes permisos para actualizar postulaciones');
       }
 
-      final now = DateTime.now();
-      final updates = {
-        'status': status.toString(),
-        'reviewedBy': context.userId,
-        'reviewedByName': context.userName,
-        'reviewedAt': Timestamp.fromDate(now),
-        'updatedAt': Timestamp.fromDate(now),
+      // Obtener la postulación completa primero para enviar el email
+      final applicationResponse = await _supabase
+          .from('applications')
+          .select('*')
+          .eq('id', applicationId)
+          .single();
+
+      if (applicationResponse.isEmpty) {
+        throw Exception('Postulación no encontrada');
+      }
+
+      final programId = applicationResponse['program_id'] as String;
+
+      // Si se está aprobando, verificar el límite de aplicaciones
+      if (status == ApplicationStatus.approved) {
+        // Obtener el programa para verificar el límite
+        final program = await SupabaseProgramsService.getProgramById(programId);
+        
+        if (program != null) {
+          // Contar cuántas aplicaciones ya están aprobadas
+          final approvedCountResponse = await _supabase
+              .from('applications')
+              .select('id')
+              .eq('program_id', programId)
+              .eq('status', 'approved');
+          
+          final approvedCount = (approvedCountResponse as List).length;
+          
+          print('📊 Verificando límite de programa:');
+          print('   - Aprobadas actualmente: $approvedCount');
+          print('   - Límite máximo: ${program.maxApplications}');
+          
+          // Verificar si ya se alcanzó el límite
+          if (approvedCount >= program.maxApplications) {
+            throw Exception('El programa ha alcanzado su límite máximo de ${program.maxApplications} postulantes aprobados. No se pueden aprobar más aplicaciones.');
+          }
+        }
+      }
+
+      // Actualizar estado en Supabase
+      final now = DateTime.now().toIso8601String();
+      final statusString = status.toString().split('.').last; // Convertir enum a string
+      
+      final updates = <String, dynamic>{
+        'status': statusString,
+        'reviewed_at': now,
+        'updated_at': now,
       };
 
-      if (notes != null) {
-        updates['notes'] = notes;
-      }
-      if (rejectionReason != null) {
-        updates['rejectionReason'] = rejectionReason;
+      // Solo agregar reviewed_by si el userId es válido y existe en la tabla users
+      // Para admin_institution, el userId puede ser el institutionId, así que verificamos primero
+      try {
+        final userId = context.userId;
+        if (userId.isNotEmpty) {
+          // Verificar que sea un UUID válido (formato básico)
+          if (RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', caseSensitive: false).hasMatch(userId)) {
+            // Verificar que el userId existe en la tabla users
+            // Si es admin_institution, el userId puede ser el institutionId, así que verificamos
+            if (context.userRole == 'admin_institution') {
+              // Para admin_institution, buscar el usuario real en la tabla users
+              // o simplemente no usar reviewed_by ya que no tienen un registro en users
+              print('⚠️ admin_institution: No se puede usar reviewed_by (userId es institutionId)');
+              // No agregar reviewed_by para admin_institution
+            } else {
+              // Para otros roles, verificar que el userId existe en users
+              try {
+                final userCheck = await _supabase
+                    .from('users')
+                    .select('id')
+                    .eq('id', userId)
+                    .maybeSingle();
+                
+                if (userCheck != null) {
+                  updates['reviewed_by'] = userId;
+                  updates['reviewed_by_name'] = context.userName;
+                  print('✅ reviewed_by asignado: $userId');
+                } else {
+                  print('⚠️ userId no existe en tabla users: $userId');
+                  // No agregar reviewed_by si no existe en users
+                }
+              } catch (e) {
+                print('⚠️ Error verificando userId en users: $e');
+                // No agregar reviewed_by si hay error
+              }
+            }
+          } else {
+            print('⚠️ userId no es un UUID válido: $userId');
+            // No agregar reviewed_by si no es válido
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error validando userId: $e');
+        // Continuar sin reviewed_by si hay error
       }
 
-      await _firestore.collection(_collection).doc(applicationId).update(updates);
+      if (notes != null && notes.isNotEmpty) {
+        updates['notes'] = notes;
+      }
+      if (rejectionReason != null && rejectionReason.isNotEmpty) {
+        updates['rejection_reason'] = rejectionReason;
+      }
+
+      print('📝 Actualizando postulación con: $updates');
+      
+      try {
+        final updateResponse = await _supabase
+            .from('applications')
+            .update(updates)
+            .eq('id', applicationId)
+            .select();
+        
+        if (updateResponse.isEmpty) {
+          throw Exception('No se pudo actualizar la postulación');
+        }
+        
+        print('✅ Postulación actualizada exitosamente');
+      } catch (e) {
+        final errorMessage = e.toString();
+        print('❌ Error al actualizar postulación: $errorMessage');
+        
+        // Verificar si es un error de foreign key
+        if (errorMessage.contains('foreign key') || 
+            errorMessage.contains('violates foreign key constraint') ||
+            errorMessage.contains('reviewed_by')) {
+          // Si el error es por reviewed_by, intentar sin ese campo
+          print('⚠️ Error de foreign key en reviewed_by, intentando sin ese campo...');
+          updates.remove('reviewed_by');
+          updates.remove('reviewed_by_name');
+          
+          final updateResponse = await _supabase
+              .from('applications')
+              .update(updates)
+              .eq('id', applicationId)
+              .select();
+          
+          if (updateResponse.isEmpty) {
+            throw Exception('No se pudo actualizar la postulación');
+          }
+          
+          print('✅ Postulación actualizada exitosamente (sin reviewed_by)');
+        } else {
+          rethrow;
+        }
+      }
+
+      // Enviar email de notificación al estudiante
+      try {
+        await _sendApplicationStatusEmail(
+          studentName: applicationResponse['student_name'] ?? 'Estudiante',
+          studentEmail: applicationResponse['student_email'] ?? '',
+          programTitle: applicationResponse['program_title'] ?? 'Programa',
+          status: status,
+          rejectionReason: rejectionReason,
+        );
+      } catch (emailError) {
+        print('⚠️ Error enviando email (no crítico): $emailError');
+        // No fallar toda la operación si el email falla
+      }
 
       print('✅ Estado de postulación actualizado: $applicationId -> ${status.displayName}');
     } catch (e) {
       throw Exception('Error al actualizar estado de postulación: $e');
+    }
+  }
+
+  // Enviar email de notificación de estado de postulación
+  static Future<void> _sendApplicationStatusEmail({
+    required String studentName,
+    required String studentEmail,
+    required String programTitle,
+    required ApplicationStatus status,
+    String? rejectionReason,
+  }) async {
+    try {
+      const serviceId = 'service_bdav8mg';
+      const templateId = 'template_2fs5k3c';
+      const userId = 'o1eUKl5D0Qq9fJ1Jv';
+
+      String subject;
+      String message;
+
+      if (status == ApplicationStatus.approved) {
+        subject = '✅ Postulación Aprobada - $programTitle';
+        message = '''
+Estimado/a $studentName,
+
+¡Felicitaciones! Tu postulación al programa "$programTitle" ha sido APROBADA.
+
+Estamos emocionados de recibirte en nuestro programa. Pronto te contactaremos con los próximos pasos y detalles adicionales.
+
+Si tienes alguna pregunta, no dudes en contactarnos.
+
+¡Bienvenido al equipo!
+
+Saludos cordiales,
+Equipo de CertiBlock
+        ''';
+      } else if (status == ApplicationStatus.rejected) {
+        subject = '❌ Resultado de tu Postulación - $programTitle';
+        message = '''
+Estimado/a $studentName,
+
+Lamentamos informarte que tu postulación al programa "$programTitle" no fue seleccionada en esta ocasión.
+
+${rejectionReason != null && rejectionReason.isNotEmpty ? 'Motivo del rechazo:\n$rejectionReason\n\n' : ''}
+Sabemos que esto puede ser decepcionante, pero te animamos a que sigas postulándote a otros programas que se ajusten a tu perfil.
+
+Si tienes alguna pregunta sobre este proceso o deseas retroalimentación adicional, no dudes en contactarnos.
+
+Gracias por tu interés y te deseamos el mejor de los éxitos en tus futuras postulaciones.
+
+Saludos cordiales,
+Equipo de CertiBlock
+        ''';
+      } else if (status == ApplicationStatus.under_review) {
+        subject = '📋 Postulación en Revisión - $programTitle';
+        message = '''
+Estimado/a $studentName,
+
+Esta es una confirmación de que hemos recibido tu postulación al programa "$programTitle" y actualmente se encuentra en proceso de revisión.
+
+Nuestro equipo está evaluando cuidadosamente tu solicitud. Te notificaremos tan pronto como tengamos un resultado.
+
+Mientras tanto, si tienes alguna pregunta, no dudes en contactarnos.
+
+Saludos cordiales,
+Equipo de CertiBlock
+        ''';
+      } else {
+        // Para otros estados, no enviar email
+        return;
+      }
+
+      // Enviar email usando EmailJS
+      final String url = 'https://api.emailjs.com/api/v1.0/email/send';
+      
+      final Map<String, String> headers = {
+        'Content-Type': 'application/json',
+      };
+
+      final Map<String, dynamic> data = {
+        'service_id': serviceId,
+        'template_id': templateId,
+        'user_id': userId,
+        'template_params': {
+          'name': 'CertiBlock',
+          'to_email': studentEmail,
+          'message': message,
+          'subject': subject,
+        }
+      };
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: headers,
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 200) {
+        print('✅ Email enviado exitos hacia: $studentEmail');
+      } else {
+        throw Exception('Error enviando email: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Error enviando email de notificación: $e');
+      rethrow;
     }
   }
 
@@ -363,13 +722,13 @@ class ApplicationService {
         throw Exception('Usuario no autenticado');
       }
 
-      // Obtener certificados del estudiante
-      final certificates = await CertificateService.getCertificates(
-        studentId: context.userId,
-        status: 'active',
-      );
+      // Obtener certificados del estudiante usando Supabase
+      final certificates = await SupabaseCertificateService.getCertificatesByStudent(context.userId);
 
-      return certificates.map((cert) => {
+      // Filtrar solo certificados activos
+      final activeCertificates = certificates.where((cert) => cert.status == 'active').toList();
+
+      return activeCertificates.map((cert) => {
         'id': cert.id,
         'title': cert.title,
         'type': cert.certificateType,

@@ -5,7 +5,7 @@ class HeaderHome extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     return Container(
-      height: screenHeight * 0.35, // 35% de la pantalla
+      height: screenHeight * 0.1, // 15% de la pantalla (reducido de 30%)
       width: double.infinity,
       child: CustomPaint(
         painter: _HeaderHomePainter(),
@@ -19,18 +19,11 @@ class _HeaderHomePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = const Color(0xff373851)
-      ..style = PaintingStyle.fill
-      ..strokeWidth = 5;
+      ..style = PaintingStyle.fill;
 
-    final path = Path();
-    path.lineTo(0, size.height * 0.6);
-    path.quadraticBezierTo(size.width * 0.2, size.height * 0.62,
-        size.width * 0.6, size.height * 0.45);
-    path.quadraticBezierTo(
-        size.width * 0.8, size.height * 0.35, size.width, size.height * 0.39);
-    path.lineTo(size.width, 0);
-
-    canvas.drawPath(path, paint);
+    // Crear un rectángulo recto simple
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    canvas.drawRect(rect, paint);
   }
 
   @override

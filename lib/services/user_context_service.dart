@@ -6,7 +6,8 @@ import 'dart:convert';
 import '../models/institution.dart';
 import '../constants/roles.dart';
 import '../data/sample_institutions.dart';
-import 'institution_service.dart';
+import 'adapters/institution_adapter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UserContext {
   final String userId;
@@ -157,30 +158,56 @@ class UserContextService {
       final prefs = await SharedPreferences.getInstance();
       final contextString = prefs.getString('user_context');
       
+      
       if (contextString != null) {
         final contextMap = jsonDecode(contextString);
         final institutionId = contextMap['institutionId'];
+        
         
         // Cargar institución si existe
         Institution? institution;
         if (institutionId != null) {
           try {
-            // Cargar desde InstitutionService
-            institution = await InstitutionService.getInstitution(institutionId);
+            // Cargar desde InstitutionAdapter (Supabase)
+            institution = await InstitutionAdapter.getInstitution(institutionId);
+            
+            // Si no se encontró la institución, buscar por el usuario en Supabase
+            if (institution == null) {
+              institution = await _loadInstitutionFromUser(contextMap['userId']);
+            }
           } catch (e) {
-            print('Error loading institution: $e');
             // Fallback a datos de ejemplo si hay error
             institution = SampleInstitutions.getInstitutionById(institutionId);
           }
+        } else {
+          institution = await _loadInstitutionFromUser(contextMap['userId']);
         }
         
         _currentContext = UserContext.fromMap(contextMap, institution);
         _currentInstitution = institution;
         
+        // Si encontramos la institución, actualizar el contexto guardado
+        if (institution != null && contextMap['institutionId'] != institution.id) {
+          contextMap['institutionId'] = institution.id;
+          contextMap['institutionName'] = institution.name;
+          contextMap['currentInstitution'] = {
+            'id': institution.id,
+            'name': institution.name,
+            'shortName': institution.shortName,
+            'description': institution.description,
+            'logoUrl': institution.logoUrl,
+            'institutionCode': institution.institutionCode,
+          };
+          
+          // Guardar el contexto actualizado
+          await setUserContext(_currentContext!);
+        }
+        
+        
         return _currentContext;
+      } else {
       }
     } catch (e) {
-      print('Error loading user context: $e');
     }
     
     return null;
@@ -241,5 +268,34 @@ class UserContextService {
 
   // Verificar si el contexto está inicializado
   static bool get isInitialized => _currentContext != null;
+
+  // Cargar institución desde el usuario en Supabase
+  static Future<Institution?> _loadInstitutionFromUser(String? userId) async {
+    if (userId == null) {
+      return null;
+    }
+
+    try {
+      
+      // Buscar el usuario en Supabase
+      final userResponse = await Supabase.instance.client
+          .from('users')
+          .select('institution_id')
+          .eq('id', userId)
+          .single();
+
+      final userInstitutionId = userResponse['institution_id'];
+
+      if (userInstitutionId != null) {
+        // Buscar la institución
+        final institution = await InstitutionAdapter.getInstitution(userInstitutionId);
+        return institution;
+      } else {
+        return null;
+      }
+    } catch (e) {
+      return null;
+    }
+  }
 }
 

@@ -1,0 +1,3 @@
+@echo off
+echo Enviando comando de hot reload...
+echo r | flutter run -d web-server --web-port 8081

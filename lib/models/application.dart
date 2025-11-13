@@ -159,6 +159,44 @@ class Application {
     );
   }
 
+  factory Application.fromSupabase(Map<String, dynamic> data) {
+    return Application(
+      id: data['id']?.toString() ?? '',
+      studentId: data['student_id']?.toString() ?? '',
+      studentName: data['student_name']?.toString() ?? '',
+      studentEmail: data['student_email']?.toString() ?? '',
+      programId: data['program_id']?.toString() ?? '',
+      programTitle: data['program_title']?.toString() ?? '',
+      institutionId: data['institution_id']?.toString() ?? '',
+      institutionName: data['institution_name']?.toString() ?? '',
+      status: ApplicationStatus.fromString(data['status']?.toString() ?? 'pending'),
+      cvUrl: data['cv_url']?.toString() ?? '',
+      cvFileName: data['cv_file_name']?.toString() ?? '',
+      selectedCertificates: List<String>.from(data['selected_certificates'] ?? []),
+      certificateDetails: List<Map<String, dynamic>>.from(data['certificate_details'] ?? []),
+      motivationLetter: data['motivation_letter']?.toString() ?? '',
+      motivationPdfData: data['motivation_pdf_data']?.toString(),
+      motivationPdfFileName: data['motivation_pdf_file_name']?.toString(),
+      additionalDocuments: Map<String, dynamic>.from(data['additional_documents'] ?? {}),
+      submittedAt: data['submitted_at'] != null 
+          ? DateTime.parse(data['submitted_at'].toString())
+          : DateTime.now(),
+      reviewedBy: data['reviewed_by']?.toString(),
+      reviewedByName: data['reviewed_by_name']?.toString(),
+      reviewedAt: data['reviewed_at'] != null 
+          ? DateTime.parse(data['reviewed_at'].toString())
+          : null,
+      notes: data['notes']?.toString(),
+      rejectionReason: data['rejection_reason']?.toString(),
+      createdAt: data['created_at'] != null 
+          ? DateTime.parse(data['created_at'].toString())
+          : DateTime.now(),
+      updatedAt: data['updated_at'] != null 
+          ? DateTime.parse(data['updated_at'].toString())
+          : DateTime.now(),
+    );
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'studentId': studentId,

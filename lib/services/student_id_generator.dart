@@ -1,8 +1,9 @@
 // lib/services/student_id_generator.dart
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase/supabase_config.dart';
 
 class StudentIdGenerator {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static SupabaseClient get _client => SupabaseConfig.client;
 
   /// Generar un ID de estudiante único basado en el año actual
   static Future<String> generateStudentId() async {
@@ -10,20 +11,20 @@ class StudentIdGenerator {
       final currentYear = DateTime.now().year;
       final yearPrefix = currentYear.toString();
       
-      // Buscar el último ID de estudiante del año actual
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'student')
-          .where('studentId', isGreaterThanOrEqualTo: yearPrefix)
-          .where('studentId', isLessThan: '${currentYear + 1}')
-          .orderBy('studentId', descending: true)
-          .limit(1)
-          .get();
+      // Buscar el último ID de estudiante del año actual en Supabase
+      final response = await _client
+          .from('users')
+          .select('student_id')
+          .eq('role', 'student')
+          .gte('student_id', yearPrefix)
+          .lt('student_id', '${currentYear + 1}')
+          .order('student_id', ascending: false)
+          .limit(1);
 
       int nextNumber = 1;
       
-      if (querySnapshot.docs.isNotEmpty) {
-        final lastStudentId = querySnapshot.docs.first.data()['studentId'] as String;
+      if (response.isNotEmpty) {
+        final lastStudentId = response.first['student_id'] as String;
         
         // Extraer el número del último ID
         if (lastStudentId.startsWith(yearPrefix)) {
@@ -37,11 +38,11 @@ class StudentIdGenerator {
       final formattedNumber = nextNumber.toString().padLeft(3, '0');
       final studentId = '$yearPrefix$formattedNumber';
       
-      print('✅ ID de estudiante generado: $studentId');
+      print('✅ ID de estudiante generado en Supabase: $studentId');
       return studentId;
       
     } catch (e) {
-      print('❌ Error generando ID de estudiante: $e');
+      print('❌ Error generando ID de estudiante en Supabase: $e');
       // Fallback: usar timestamp si hay error
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       return '${DateTime.now().year}${timestamp.toString().substring(8)}';
@@ -66,15 +67,15 @@ class StudentIdGenerator {
   /// Verificar si un ID de estudiante ya existe
   static Future<bool> studentIdExists(String studentId) async {
     try {
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('studentId', isEqualTo: studentId)
-          .limit(1)
-          .get();
+      final response = await _client
+          .from('users')
+          .select('id')
+          .eq('student_id', studentId)
+          .limit(1);
       
-      return querySnapshot.docs.isNotEmpty;
+      return response.isNotEmpty;
     } catch (e) {
-      print('❌ Error verificando ID de estudiante: $e');
+      print('❌ Error verificando ID de estudiante en Supabase: $e');
       return false;
     }
   }
@@ -85,27 +86,27 @@ class StudentIdGenerator {
       final currentYear = DateTime.now().year;
       
       // Contar estudiantes del año actual
-      final currentYearQuery = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'student')
-          .where('studentId', isGreaterThanOrEqualTo: currentYear.toString())
-          .where('studentId', isLessThan: '${currentYear + 1}')
-          .get();
+      final currentYearResponse = await _client
+          .from('users')
+          .select('id')
+          .eq('role', 'student')
+          .gte('student_id', currentYear.toString())
+          .lt('student_id', '${currentYear + 1}');
       
       // Contar todos los estudiantes
-      final allStudentsQuery = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'student')
-          .get();
+      final allStudentsResponse = await _client
+          .from('users')
+          .select('id')
+          .eq('role', 'student');
       
       return {
         'currentYear': currentYear,
-        'studentsThisYear': currentYearQuery.docs.length,
-        'totalStudents': allStudentsQuery.docs.length,
+        'studentsThisYear': currentYearResponse.length,
+        'totalStudents': allStudentsResponse.length,
         'nextStudentId': await generateStudentId(),
       };
     } catch (e) {
-      print('❌ Error obteniendo estadísticas: $e');
+      print('❌ Error obteniendo estadísticas en Supabase: $e');
       return {
         'currentYear': DateTime.now().year,
         'studentsThisYear': 0,

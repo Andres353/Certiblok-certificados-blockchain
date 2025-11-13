@@ -2,9 +2,9 @@
 // Pantalla simple para que estudiantes se vinculen a una institución usando código
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/institution.dart';
-import '../../services/institution_service.dart';
+import '../../services/adapters/institution_adapter.dart';
 import '../../services/user_context_service.dart';
 
 class JoinInstitutionScreen extends StatefulWidget {
@@ -43,13 +43,22 @@ class _JoinInstitutionScreenState extends State<JoinInstitutionScreen> {
     });
 
     try {
-      final career = await InstitutionService.getCareerByCode(
+      final career = await InstitutionAdapter.getCareerByCode(
         _codeController.text.trim(),
       );
 
       if (career != null) {
         // Obtener información de la institución
-        final institution = await InstitutionService.getInstitution(career['institutionId']);
+        final institutionId = career['institution_id'] ?? career['institutionId'];
+        if (institutionId == null) {
+          setState(() {
+            _codeError = 'ID de institución no encontrado en la carrera';
+            _selectedInstitution = null;
+          });
+          return;
+        }
+        
+        final institution = await InstitutionAdapter.getInstitution(institutionId);
         
         if (institution != null) {
           setState(() {
@@ -101,38 +110,46 @@ class _JoinInstitutionScreenState extends State<JoinInstitutionScreen> {
       if (userContext?.institutionId == _selectedInstitution!.id || 
           userContext?.institutionName == _selectedInstitution!.name ||
           userContext?.institution == _selectedInstitution!.name) {
+        
+        // Si ya está en la misma institución, permitir cambio de carrera
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ya estás registrado en esta institución'),
-            backgroundColor: Colors.orange,
+            content: Text('Cambiando carrera en la misma institución...'),
+            backgroundColor: Colors.blue,
           ),
         );
-        return;
       }
 
       // Obtener información de la carrera desde el código
-      final career = await InstitutionService.getCareerByCode(_codeController.text.trim());
+      final career = await InstitutionAdapter.getCareerByCode(_codeController.text.trim());
       if (career == null) {
         throw Exception('Carrera no encontrada');
       }
 
-      // Actualizar estudiante en la colección users
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userContext!.userId)
+      // Actualizar estudiante en Supabase
+      final supabase = Supabase.instance.client;
+      await supabase
+          .from('users')
           .update({
-        'institutionId': _selectedInstitution!.id,
-        'institutionName': _selectedInstitution!.name,
-        'program': career['name'],
-        'faculty': career['facultyName'],
-        'programId': _selectedCarreraId,
-        'facultyId': career['facultyId'],
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+        'institution_id': _selectedInstitution!.id,
+        'institution_name': _selectedInstitution!.name,
+        'program': career['name'] ?? 'Sin programa',
+        'faculty': career['faculty_name'] ?? 'Sin facultad',
+        'program_id': _selectedCarreraId,
+        'faculty_id': career['faculty_id'],
+        'updated_at': DateTime.now().toIso8601String(),
+      })
+          .eq('id', userContext!.userId);
 
+      // Determinar si es cambio de carrera o nueva vinculación
+      final isSameInstitution = userContext?.institutionId == _selectedInstitution!.id;
+      final message = isSameInstitution 
+          ? 'Carrera cambiada exitosamente a ${career['name'] ?? 'la carrera'}'
+          : 'Te has vinculado exitosamente a ${career['name'] ?? 'la carrera'} en ${_selectedInstitution!.name}';
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Te has vinculado exitosamente a ${career['name']} en ${_selectedInstitution!.name}'),
+          content: Text(message),
           backgroundColor: Colors.green,
         ),
       );

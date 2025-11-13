@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:math';
-import 'package:frontend_app/screens/inicio/set_password_page.dart';
+import '../../services/adapters/auth_adapter.dart';
 import '../../services/student_id_generator.dart';
+import '../../services/alert_service.dart';
+import 'dart:math';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class RegisterStudent extends StatefulWidget {
   const RegisterStudent({super.key});
@@ -15,20 +15,42 @@ class RegisterStudent extends StatefulWidget {
 
 class _RegisterStudentState extends State<RegisterStudent> {
   final _formKey = GlobalKey<FormState>();
-  final _codeFormKey = GlobalKey<FormState>();
 
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _verificationCodeController = TextEditingController();
+  final TextEditingController _documentController = TextEditingController();
+  final TextEditingController _birthDateController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
 
   bool _isLoading = false;
-  bool _codeSent = false;
-  late String _userId;
+  DateTime? _selectedBirthDate;
 
-  String generateVerificationCode() {
+  String _generateSecurePassword() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#\$%^&*';
     final rand = Random();
-    return (100000 + rand.nextInt(900000)).toString();
+    return String.fromCharCodes(Iterable.generate(12, (_) => chars.codeUnitAt(rand.nextInt(chars.length))));
+  }
+
+  Future<void> _selectBirthDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedBirthDate ?? DateTime.now().subtract(Duration(days: 18 * 365)),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      helpText: 'Seleccionar fecha de nacimiento',
+      cancelText: 'Cancelar',
+      confirmText: 'Confirmar',
+    );
+    if (picked != null && picked != _selectedBirthDate) {
+      setState(() {
+        _selectedBirthDate = picked;
+        final day = picked.day.toString().padLeft(2, '0');
+        final month = picked.month.toString().padLeft(2, '0');
+        final year = picked.year.toString();
+        _birthDateController.text = '$day/$month/$year';
+      });
+    }
   }
 
   Future<void> sendEmail({
@@ -68,122 +90,92 @@ class _RegisterStudentState extends State<RegisterStudent> {
       final fullName = _fullNameController.text.trim();
       final email = _emailController.text.trim();
       final phone = _phoneController.text.trim();
-      final code = generateVerificationCode();
+      final document = _documentController.text.trim();
+      final birthDate = _birthDateController.text.trim();
+      final address = _addressController.text.trim();
 
       try {
-        // Verificar si el email ya existe
-        final existingQuery = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: email)
-            .limit(1)
-            .get();
-
-        if (existingQuery.docs.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Este email ya está registrado'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-          setState(() => _isLoading = false);
-          return;
-        }
-
-        // Generar ID de estudiante único automáticamente
+        // Generar contraseña temporal y ID de estudiante
+        final tempPassword = _generateSecurePassword();
         final studentId = await StudentIdGenerator.generateStudentId();
 
-        final docRef = FirebaseFirestore.instance.collection('users').doc();
-        _userId = docRef.id;
-
-        await docRef.set({
-          'fullName': fullName,
-          'email': email,
-          'studentId': studentId,
-          'phone': phone,
-          'createdAt': Timestamp.now(),
-          'verificationCode': code,
-          'isVerified': false,
-          'role': 'student',
-          'mustChangePassword': false,
-          'isTemporaryPassword': false,
-          'status': 'active',
-        });
-
-        await sendEmail(
-          name: fullName,
+        // Registrar estudiante usando Supabase con contraseña temporal
+        final result = await AuthAdapter.registerStudent(
           email: email,
-          message: 'Hola $fullName,\n\nTu código de verificación es: $code\n\nTu ID de estudiante es: $studentId\n\nSi tú no solicitaste este registro, ignora este mensaje.\n\n¡Bienvenido a nuestra plataforma educativa!',
+          password: tempPassword,
+          fullName: fullName,
+          studentId: studentId,
+          phone: phone,
+          document: document,
+          birthDate: birthDate,
+          address: address,
         );
 
-        setState(() => _codeSent = true);
+        if (result['success']) {
+          // Enviar email con contraseña temporal usando EmailJS
+          try {
+            await sendEmail(
+              name: fullName,
+              email: email,
+              message: '¡Bienvenido a Certiblock!\n\n'
+                      'Tu cuenta ha sido creada exitosamente.\n\n'
+                      'Credenciales de acceso:\n'
+                      'Email: $email\n'
+                      'Contraseña temporal: $tempPassword\n\n'
+                      'IMPORTANTE: Debes cambiar esta contraseña en tu primer inicio de sesión.\n\n'
+                      'Si no solicitaste este registro, puedes ignorar este email.',
+            );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Registro exitoso. Revisa tu correo para el código de verificación.'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _verifyCode() async {
-    if (_codeFormKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(_userId).get();
-        if (!doc.exists) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Usuario no encontrado')),
-          );
-          setState(() => _isLoading = false);
-          return;
-        }
-
-        final storedCode = doc.data()?['verificationCode'];
-        if (storedCode == _verificationCodeController.text.trim()) {
-          await FirebaseFirestore.instance.collection('users').doc(_userId).update({'isVerified': true});
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Verificación exitosa. Redirigiendo...')),
-          );
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => SetPasswordPage(userId: _userId)),
-          );
+            // Mostrar SweetAlert de éxito
+            AlertService.showSuccess(
+              context,
+              'Registro Exitoso',
+              'Tu cuenta ha sido creada exitosamente.\n\n'
+              'La contraseña temporal ha sido enviada a:\n$email\n\n'
+              'IMPORTANTE: Debes cambiar esta contraseña en tu primer inicio de sesión.',
+              onOk: () {
+                Navigator.pop(context); // Volver al login
+              },
+            );
+          } catch (emailError) {
+            // Si falla el email, aún permitir continuar
+            AlertService.showWarning(
+              context,
+              'Registro Exitoso',
+              'Tu cuenta ha sido creada exitosamente.\n\n'
+              'Sin embargo, hubo un error al enviar el email con tu contraseña temporal.\n\n'
+              'Error: $emailError\n\n'
+              'Por favor, contacta al administrador para obtener tus credenciales.',
+              onOk: () {
+                Navigator.pop(context); // Volver al login
+              },
+            );
+          }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Código incorrecto')),
-          );
+          throw Exception(result['message'] ?? 'Error desconocido');
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+        AlertService.showError(
+          context,
+          'Error al Registrar',
+          'No se pudo registrar el estudiante: $e',
         );
+      } finally {
+        setState(() => _isLoading = false);
       }
-
-      setState(() => _isLoading = false);
     }
   }
+
+
 
   @override
   void dispose() {
     _fullNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _verificationCodeController.dispose();
+    _documentController.dispose();
+    _birthDateController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -246,8 +238,7 @@ class _RegisterStudentState extends State<RegisterStudent> {
                 ),
                 child: Padding(
                   padding: EdgeInsets.all(24),
-                  child: !_codeSent
-                      ? Form(
+                  child: Form(
                           key: _formKey,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,11 +267,40 @@ class _RegisterStudentState extends State<RegisterStudent> {
                                 ),
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'El nombre es obligatorio';
+                                    return 'El nombre completo es obligatorio';
                                   }
-                                  if (value.length < 2) {
-                                    return 'El nombre debe tener al menos 2 caracteres';
+                                  
+                                  // Limpiar espacios extra y dividir en palabras
+                                  final cleanValue = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+                                  final words = cleanValue.split(' ');
+                                  
+                                  // Validar que tenga al menos 2 palabras (nombre y apellido)
+                                  if (words.length < 2) {
+                                    return 'Debe incluir nombre y al menos un apellido';
                                   }
+                                  
+                                  // Validar que cada palabra tenga al menos 2 caracteres
+                                  for (String word in words) {
+                                    if (word.length < 2) {
+                                      return 'Cada parte del nombre debe tener al menos 2 caracteres';
+                                    }
+                                  }
+                                  
+                                  // Validar que no contenga números
+                                  if (RegExp(r'[0-9]').hasMatch(cleanValue)) {
+                                    return 'El nombre no puede contener números';
+                                  }
+                                  
+                                  // Validar que no contenga caracteres especiales
+                                  if (RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(cleanValue)) {
+                                    return 'El nombre no puede contener caracteres especiales';
+                                  }
+                                  
+                                  // Validar longitud total mínima
+                                  if (cleanValue.length < 5) {
+                                    return 'El nombre completo debe tener al menos 5 caracteres';
+                                  }
+                                  
                                   return null;
                                 },
                               ),
@@ -303,7 +323,9 @@ class _RegisterStudentState extends State<RegisterStudent> {
                                   if (value == null || value.isEmpty) {
                                     return 'El email es obligatorio';
                                   }
-                                  if (!value.contains('@') || !value.contains('.')) {
+                                  // Validar formato de email correctamente
+                                  final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                                  if (!emailRegex.hasMatch(value)) {
                                     return 'Ingresa un email válido';
                                   }
                                   return null;
@@ -315,18 +337,112 @@ class _RegisterStudentState extends State<RegisterStudent> {
                               TextFormField(
                                 controller: _phoneController,
                                 decoration: InputDecoration(
-                                  labelText: 'Teléfono (Opcional)',
+                                  labelText: 'Teléfono *',
                                   prefixIcon: Icon(Icons.phone, color: Color(0xff6C4DDC)),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
                                   fillColor: Colors.grey[50],
-                                  hintText: 'Ej: +57 300 123 4567',
                                 ),
                                 keyboardType: TextInputType.phone,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'El teléfono es obligatorio';
+                                  }
+                                  // Validar que solo contenga números
+                                  final phoneRegex = RegExp(r'^[0-9]+$');
+                                  if (!phoneRegex.hasMatch(value)) {
+                                    return 'El teléfono solo puede contener números';
+                                  }
+                                  return null;
+                                },
                               ),
-                              SizedBox(height: 32),
+                              SizedBox(height: 16),
+                              
+                              // Documento de identidad
+                              TextFormField(
+                                controller: _documentController,
+                                decoration: InputDecoration(
+                                  labelText: 'Documento de Identidad *',
+                                  prefixIcon: Icon(Icons.badge, color: Color(0xff6C4DDC)),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey[50],
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'El documento es obligatorio';
+                                  }
+                                  // Validar que solo contenga números
+                                  final documentRegex = RegExp(r'^[0-9]+$');
+                                  if (!documentRegex.hasMatch(value)) {
+                                    return 'El documento solo puede contener números';
+                                  }
+                                  if (value.length < 6) {
+                                    return 'El documento debe tener al menos 6 caracteres';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              SizedBox(height: 16),
+                              
+                              // Fecha de nacimiento
+                              TextFormField(
+                                controller: _birthDateController,
+                                readOnly: true,
+                                decoration: InputDecoration(
+                                  labelText: 'Fecha de Nacimiento *',
+                                  hintText: 'Selecciona tu fecha de nacimiento',
+                                  prefixIcon: Icon(Icons.calendar_today, color: Color(0xff6C4DDC)),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey[50],
+                                ),
+                                onTap: _selectBirthDate,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'La fecha de nacimiento es obligatoria';
+                                  }
+                                  if (_selectedBirthDate == null) {
+                                    return 'Selecciona una fecha válida';
+                                  }
+                                  // Validar que la fecha no sea después de hoy
+                                  final today = DateTime.now();
+                                  if (_selectedBirthDate!.isAfter(today)) {
+                                    return 'La fecha de nacimiento no puede ser después de hoy';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              SizedBox(height: 16),
+                              
+                              // Dirección
+                              TextFormField(
+                                controller: _addressController,
+                                decoration: InputDecoration(
+                                  labelText: 'Dirección (opcional)',
+                                  prefixIcon: Icon(Icons.location_on, color: Color(0xff6C4DDC)),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey[50],
+                                ),
+                                maxLines: 2,
+                                validator: (value) {
+                                  // Si hay contenido, debe tener al menos 10 caracteres
+                                  if (value != null && value.isNotEmpty && value.length < 10) {
+                                    return 'La dirección debe tener al menos 10 caracteres';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              SizedBox(height: 16),
                               
                               // Botón de registro
                               SizedBox(
@@ -367,104 +483,6 @@ class _RegisterStudentState extends State<RegisterStudent> {
                                       color: Color(0xff6C4DDC),
                                       fontWeight: FontWeight.w500,
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Form(
-                          key: _codeFormKey,
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.mark_email_read,
-                                size: 64,
-                                color: Color(0xff6C4DDC),
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'Verificación de Email',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xff2E2F44),
-                                ),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'Hemos enviado un código de verificación a tu correo electrónico',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              SizedBox(height: 32),
-                              TextFormField(
-                                controller: _verificationCodeController,
-                                decoration: InputDecoration(
-                                  labelText: 'Código de Verificación *',
-                                  prefixIcon: Icon(Icons.security, color: Color(0xff6C4DDC)),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.grey[50],
-                                  hintText: 'Ingresa el código de 6 dígitos',
-                                ),
-                                keyboardType: TextInputType.number,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Ingresa el código de verificación';
-                                  }
-                                  if (value.length != 6) {
-                                    return 'El código debe tener 6 dígitos';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              SizedBox(height: 32),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 50,
-                                child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _verifyCode,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Color(0xff6C4DDC),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    elevation: 2,
-                                  ),
-                                  child: _isLoading
-                                      ? CircularProgressIndicator(color: Colors.white)
-                                      : Text(
-                                          'Verificar Código',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                              SizedBox(height: 16),
-                              TextButton(
-                                onPressed: () {
-                                  setState(() => _codeSent = false);
-                                },
-                                child: Text(
-                                  'Cambiar email',
-                                  style: TextStyle(
-                                    color: Color(0xff6C4DDC),
-                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),

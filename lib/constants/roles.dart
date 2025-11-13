@@ -25,7 +25,7 @@ class UserRoles {
     SUPER_ADMIN: 'Super Administrador del Sistema (Gestiona todas las instituciones)',
     ADMIN_INSTITUTION: 'Administrador de Institución (Gestiona una institución específica)',
     EMISOR: 'Emisor de Certificados (Personal Administrativo de Institución)',
-    STUDENT: 'Estudiante (Usuario de una institución específica)',
+    STUDENT: 'Estudiante',
     PUBLIC_USER: 'Usuario Público (Verificador de Certificados)',
     // Legacy roles
     ADMIN_UV: 'Administrador General de la Universidad del Valle (Legacy)',

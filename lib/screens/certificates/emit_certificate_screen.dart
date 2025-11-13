@@ -9,16 +9,18 @@ import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 // import 'package:pdf_render/pdf_render.dart'; // Comentado temporalmente por compatibilidad con Web
-import '../../services/certificate_service.dart';
+import '../../services/adapters/certificate_adapter.dart';
 import '../../services/emisor_permission_service.dart';
 import '../../services/user_context_service.dart';
-import '../../services/certificate_template_service.dart';
+import '../../services/adapters/certificate_template_adapter.dart';
 import '../../services/certificate_notification_service.dart';
 import '../../services/alert_service.dart';
 import '../../models/certificate_template.dart';
 
 class EmitCertificateScreen extends StatefulWidget {
-  const EmitCertificateScreen({Key? key}) : super(key: key);
+  final String? studentId; // Opcional para preseleccionar un estudiante
+  
+  const EmitCertificateScreen({Key? key, this.studentId}) : super(key: key);
 
   @override
   _EmitCertificateScreenState createState() => _EmitCertificateScreenState();
@@ -38,7 +40,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
   List<CertificateTemplate> _templates = [];
   CertificateTemplate? _selectedTemplate;
   bool _useTemplate = false;
-  bool _useCustomCertificate = false;
+  bool _useCustomCertificate = true; // Siempre usar certificado personalizado
   Uint8List? _customCertificateBytes;
   String? _customCertificateFileName;
   String? _customCertificateMimeType;
@@ -55,7 +57,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
   void initState() {
     super.initState();
     _loadStudents();
-    _loadTemplates();
+    // Ya no se cargan plantillas, siempre se usa certificado personalizado
   }
 
   @override
@@ -78,8 +80,21 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
         institutionId: userContext!.institutionId!,
       );
 
+      // Si se proporcionó un studentId, preseleccionar ese estudiante
+      Map<String, dynamic>? studentToSelect;
+      if (widget.studentId != null) {
+        studentToSelect = students.firstWhere(
+          (student) => student['id'] == widget.studentId,
+          orElse: () => {},
+        );
+        if (studentToSelect.isEmpty) {
+          print('⚠️ No se encontró el estudiante con ID: ${widget.studentId}');
+        }
+      }
+
       setState(() {
         _students = students;
+        _selectedStudent = studentToSelect?.isNotEmpty == true ? studentToSelect : null;
         _isLoadingStudents = false;
       });
     } catch (e) {
@@ -97,7 +112,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
         throw Exception('No se pudo obtener la información de la institución');
       }
 
-      final templates = await CertificateTemplateService.getTemplates(
+      final templates = await CertificateTemplateAdapter.getTemplates(
         institutionId: userContext!.institutionId!,
       );
 
@@ -168,14 +183,36 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
       
       if (image != null) {
         final bytes = await image.readAsBytes();
+        
+        // Validar tamaño de la imagen (mismo límite que PDFs)
+        const int maxImageSize = 700000; // 700KB para base64
+        if (bytes.length > maxImageSize) {
+          final double sizeInKB = bytes.length / 1024;
+          final double maxSizeInKB = maxImageSize / 1024;
+          
+          AlertService.showError(
+            context, 
+            'Imagen Demasiado Grande', 
+            'La imagen seleccionada es demasiado grande (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl límite máximo es ${maxSizeInKB.toStringAsFixed(1)}KB.\n\nPor favor, comprime la imagen o usa una más pequeña.'
+          );
+          return;
+        }
+        
         setState(() {
           _customCertificateBytes = bytes;
           _customCertificateFileName = image.name;
           _customCertificateMimeType = 'image/jpeg';
           _isPdf = false;
           _useCustomCertificate = true;
-          _useTemplate = false;
         });
+        
+        // Mostrar confirmación de carga exitosa
+        final double sizeInKB = bytes.length / 1024;
+        AlertService.showSuccess(
+          context, 
+          'Imagen Cargada', 
+          'Imagen cargada exitosamente (${sizeInKB.toStringAsFixed(1)}KB).\n\nLa imagen está lista para ser usada en el certificado.'
+        );
       }
     } catch (e) {
       AlertService.showError(context, 'Error', 'Error cargando imagen: $e');
@@ -193,6 +230,20 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         if (file.bytes != null) {
+          // Validar tamaño del PDF (mismo límite que programas)
+          const int maxPdfSize = 700000; // 700KB para base64
+          if (file.bytes!.length > maxPdfSize) {
+            final double sizeInKB = file.bytes!.length / 1024;
+            final double maxSizeInKB = maxPdfSize / 1024;
+            
+            AlertService.showError(
+              context, 
+              'PDF Demasiado Grande', 
+              'El PDF seleccionado es demasiado grande (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl límite máximo es ${maxSizeInKB.toStringAsFixed(1)}KB.\n\nPor favor, comprime el PDF manualmente o usa un archivo más pequeño.\n\nHerramientas recomendadas:\n• SmallPDF.com\n• ILovePDF.com\n• Adobe Acrobat'
+            );
+            return;
+          }
+          
           setState(() {
             _customCertificateBytes = file.bytes;
             _customCertificateFileName = file.name;
@@ -201,6 +252,14 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
             _useCustomCertificate = true;
             _useTemplate = false;
           });
+          
+          // Mostrar confirmación de carga exitosa
+          final double sizeInKB = file.bytes!.length / 1024;
+          AlertService.showSuccess(
+            context, 
+            'PDF Cargado', 
+            'PDF cargado exitosamente (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl archivo está listo para ser usado en el certificado.'
+          );
         }
       }
     } catch (e) {
@@ -214,7 +273,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
       _customCertificateFileName = null;
       _customCertificateMimeType = null;
       _isPdf = false;
-      _useCustomCertificate = false;
+      _useCustomCertificate = true; // Mantener siempre activo
     });
   }
 
@@ -272,12 +331,54 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
         title: Text('Emitir Certificado'),
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xff6C4DDC),
+                Color(0xff8B5CF6),
+              ],
+            ),
+          ),
+        ),
       ),
       body: (_isLoadingStudents || _isLoadingTemplates)
-          ? Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xff6C4DDC)),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Cargando información...',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : _students.isEmpty
               ? _buildNoStudentsView()
-              : _buildEmitForm(),
+              : Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xff6C4DDC).withOpacity(0.05),
+                        Colors.white,
+                      ],
+                    ),
+                  ),
+                  child: _buildEmitForm(),
+                ),
     );
   }
 
@@ -332,46 +433,117 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
 
   Widget _buildEmitForm() {
     return SingleChildScrollView(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.all(20),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Información del emisor
-            Card(
+            // Información del emisor - Card mejorada
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xff6C4DDC),
+                    Color(0xff8B5CF6),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xff6C4DDC).withOpacity(0.3),
+                    blurRadius: 15,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
               child: Padding(
-                padding: EdgeInsets.all(16),
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.person_outline,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Información del Emisor',
+                                'Emisor',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xff2E2F44),
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(Icons.person, color: Color(0xff6C4DDC)),
-                        SizedBox(width: 8),
+                                  fontSize: 12,
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              SizedBox(height: 4),
                         Text(
                           UserContextService.currentContext?.userName ?? 'Emisor',
-                          style: TextStyle(fontSize: 16),
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
                         ),
                       ],
                     ),
-                    SizedBox(height: 8),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
                     Row(
                       children: [
-                        Icon(Icons.school, color: Color(0xff6C4DDC)),
-                        SizedBox(width: 8),
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.school_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Institución',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              SizedBox(height: 4),
                         Text(
                           UserContextService.currentContext?.institutionName ?? 'Institución',
-                          style: TextStyle(fontSize: 16),
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -382,7 +554,38 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
             
             SizedBox(height: 24),
             
-            // Selección de estudiante
+            // Selección de estudiante - Card mejorada
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.person_outline,
+                          color: Color(0xff6C4DDC),
+                          size: 20,
+                        ),
+                      ),
+                      SizedBox(width: 12),
             Text(
               'Seleccionar Estudiante',
               style: TextStyle(
@@ -391,26 +594,79 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                 color: Color(0xff2E2F44),
               ),
             ),
-            SizedBox(height: 12),
+                    ],
+                  ),
+                  SizedBox(height: 16),
             DropdownButtonFormField<Map<String, dynamic>>(
               value: _selectedStudent,
               decoration: InputDecoration(
                 labelText: 'Estudiante',
+                      hintText: 'Selecciona un estudiante',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                prefixIcon: Icon(Icons.person),
-              ),
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: Icon(Icons.person, color: Color(0xff6C4DDC)),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    itemHeight: 60,
+                    menuMaxHeight: 300,
               items: _students.map((student) {
                 return DropdownMenuItem(
                   value: student,
-                  child: Text(
-                    '${student['fullName'] ?? 'Sin nombre'} (${student['program'] ?? 'Sin programa'})',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              student['fullName'] ?? 'Sin nombre',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              student['program'] ?? 'Sin programa',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ],
                   ),
                 );
               }).toList(),
+                    selectedItemBuilder: (BuildContext context) {
+                      return _students.map((student) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            student['fullName'] ?? 'Sin nombre',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList();
+                    },
               onChanged: (value) {
                 setState(() {
                   _selectedStudent = value;
@@ -422,173 +678,149 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                 }
                 return null;
               },
+                    isExpanded: true,
+                  ),
+                ],
+              ),
             ),
             
             SizedBox(height: 24),
             
-            // Selección de plantilla
-            Text(
-              'Plantilla del Certificado',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xff2E2F44),
-              ),
-            ),
-            SizedBox(height: 12),
-            
-            // Checkbox para usar plantilla
-            Row(
-              children: [
-                Checkbox(
-                  value: _useTemplate,
-                  onChanged: (value) {
-                    setState(() {
-                      _useTemplate = value ?? false;
-                      if (!_useTemplate) {
-                        _selectedTemplate = null;
-                      }
-                      if (_useTemplate) {
-                        _useCustomCertificate = false; // Desactivar certificado personalizado
-                        _customCertificateBytes = null;
-                      }
-                    });
-                  },
-                ),
-                Text('Usar plantilla personalizada'),
-              ],
-            ),
-            
-            // Checkbox para usar certificado personalizado
-            Row(
-              children: [
-                Checkbox(
-                  value: _useCustomCertificate,
-                  onChanged: (value) {
-                    setState(() {
-                      _useCustomCertificate = value ?? false;
-                      if (!_useCustomCertificate) {
-                        _customCertificateBytes = null;
-                        _customCertificateFileName = null;
-                        _customCertificateMimeType = null;
-                        _isPdf = false;
-                      }
-                      if (_useCustomCertificate) {
-                        _useTemplate = false; // Desactivar plantilla
-                        _selectedTemplate = null;
-                      }
-                    });
-                  },
-                ),
-                Text('Usar certificado personalizado'),
-              ],
-            ),
-            
-            // Selector de plantilla (solo si está habilitado)
-            if (_useTemplate) ...[
-              SizedBox(height: 12),
-              DropdownButtonFormField<CertificateTemplate>(
-                value: _selectedTemplate,
-                decoration: InputDecoration(
-                  labelText: 'Plantilla',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+            // Sección de certificado personalizado (siempre visible) - Card mejorada
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: Offset(0, 2),
                   ),
-                  prefixIcon: Icon(Icons.description),
-                ),
-                items: _templates.map((template) {
-                  return DropdownMenuItem(
-                    value: template,
-                    child: Text(
-                      template.name,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedTemplate = value;
-                  });
-                },
-                validator: (value) {
-                  if (_useTemplate && value == null) {
-                    return 'Selecciona una plantilla';
-                  }
-                  return null;
-                },
+                ],
               ),
-              
-              // Vista previa de la plantilla
-              if (_selectedTemplate != null) ...[
-                SizedBox(height: 16),
-                Center(
-                  child: Container(
-                    width: 500, // Ancho más realista para certificado
-                    height: 350, // Proporción más natural (5:3.5)
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+            Row(
+              children: [
+                      Container(
+                        padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: _buildTemplatePreview(),
-                    ),
+                        child: Icon(
+                          Icons.description_outlined,
+                          color: Color(0xff6C4DDC),
+                          size: 20,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Certificado Personalizado',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff2E2F44),
                   ),
                 ),
               ],
-            ],
+                  ),
+                  SizedBox(height: 20),
             
-            // Sección de certificado personalizado
-            if (_useCustomCertificate) ...[
-              SizedBox(height: 16),
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Certificado Personalizado',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    
                     if (_customCertificateBytes == null) ...[
-                      // Botón para cargar certificado
-                      ElevatedButton.icon(
-                        onPressed: _pickCustomCertificate,
-                        icon: Icon(Icons.upload_file),
-                        label: Text('Cargar Certificado'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xff6C4DDC),
-                          foregroundColor: Colors.white,
+                      // Área de carga mejorada
+              Container(
+                decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Color(0xff6C4DDC).withOpacity(0.3),
+                            width: 2,
+                            style: BorderStyle.solid,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          color: Color(0xff6C4DDC).withOpacity(0.05),
+                        ),
+                        child: InkWell(
+                          onTap: _pickCustomCertificate,
+                          borderRadius: BorderRadius.circular(16),
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                child: Column(
+                  children: [
+                                Container(
+                                  padding: EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: Color(0xff6C4DDC).withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.cloud_upload_outlined,
+                                    size: 48,
+                                    color: Color(0xff6C4DDC),
+                                  ),
+                                ),
+                                SizedBox(height: 16),
+                    Text(
+                                  'Cargar Certificado',
+                      style: TextStyle(
+                                    fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                                    color: Color(0xff2E2F44),
                         ),
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Formatos soportados: JPG, PNG, PDF',
+                                  'Haz clic para seleccionar un archivo',
                         style: TextStyle(
-                          fontSize: 12,
+                                    fontSize: 14,
                           color: Colors.grey[600],
                         ),
                       ),
-                    ] else ...[
-                      // Mostrar certificado cargado
+                                SizedBox(height: 12),
                       Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            _isPdf ? Icons.picture_as_pdf : Icons.image,
-                            color: _isPdf ? Colors.red : Colors.blue,
-                            size: 20,
+                                    _buildFormatChip('PDF', Icons.picture_as_pdf, Colors.red),
+                                    SizedBox(width: 8),
+                                    _buildFormatChip('JPG', Icons.image, Colors.blue),
+                                    SizedBox(width: 8),
+                                    _buildFormatChip('PNG', Icons.image, Colors.green),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                          SizedBox(width: 8),
+                        ),
+                      ),
+                    ] else ...[
+                      // Mostrar certificado cargado - Card mejorada
+                      Container(
+                        padding: EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.green[200]!,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green[100],
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                            _isPdf ? Icons.picture_as_pdf : Icons.image,
+                                color: Colors.green[700],
+                                size: 28,
+                          ),
+                            ),
+                            SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -596,40 +828,79 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                 Text(
                                   _customCertificateFileName ?? 'Archivo cargado',
                                   style: TextStyle(
-                                    color: Colors.green,
+                                      color: Colors.green[900],
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.check_circle,
+                                        size: 16,
+                                        color: Colors.green[700],
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        _isPdf ? 'Documento PDF' : 'Imagen cargada',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.green[700],
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
+                                      SizedBox(width: 8),
                                 Text(
-                                  _isPdf ? 'Documento PDF' : 'Imagen',
+                                        '• ${(_customCertificateBytes!.length / 1024).toStringAsFixed(1)} KB',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[600],
                                   ),
+                                      ),
+                                    ],
                                 ),
                               ],
                             ),
                           ),
                           IconButton(
                             onPressed: _removeCustomCertificate,
-                            icon: Icon(Icons.delete, color: Colors.red),
+                              icon: Icon(Icons.close, color: Colors.red[700]),
                             tooltip: 'Eliminar certificado',
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.red[50],
+                                padding: EdgeInsets.all(8),
+                              ),
                           ),
                         ],
                       ),
-                      SizedBox(height: 12),
+                      ),
+                      SizedBox(height: 16),
                       
-                      // Vista previa del certificado personalizado
-                      Center(
-                        child: Container(
-                          width: 300,
-                          height: 200,
+                      // Vista previa del certificado personalizado mejorada
+                      Container(
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey[300]!),
-                            borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            width: double.infinity,
+                            height: 250,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              border: Border.all(
+                                color: Colors.grey[300]!,
+                                width: 2,
+                              ),
+                            ),
                             child: _isPdf 
                                 ? _buildPdfPreview()
                                 : Image.memory(
@@ -643,11 +914,41 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                   ],
                 ),
               ),
-            ],
             
             SizedBox(height: 24),
             
-            // Tipo de certificado
+            // Tipo de certificado - Card mejorada
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.workspace_premium_outlined,
+                          color: Color(0xff6C4DDC),
+                          size: 20,
+                        ),
+                      ),
+                      SizedBox(width: 12),
             Text(
               'Tipo de Certificado',
               style: TextStyle(
@@ -656,20 +957,38 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                 color: Color(0xff2E2F44),
               ),
             ),
-            SizedBox(height: 12),
+                    ],
+                  ),
+                  SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: _selectedCertificateType,
               decoration: InputDecoration(
                 labelText: 'Tipo',
+                      hintText: 'Selecciona el tipo de certificado',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                prefixIcon: Icon(Icons.workspace_premium),
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: Icon(Icons.workspace_premium, color: Color(0xff6C4DDC)),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
               items: _certificateTypes.map((type) {
                 return DropdownMenuItem(
                   value: type['value'],
-                  child: Text(type['label']!),
+                        child: Text(
+                          type['label']!,
+                          style: TextStyle(fontSize: 15),
+                        ),
                 );
               }).toList(),
               onChanged: (value) {
@@ -677,20 +996,79 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                   _selectedCertificateType = value!;
                 });
               },
+                  ),
+                ],
+              ),
             ),
             
             SizedBox(height: 24),
+            
+            // Información del certificado - Card mejorada
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.edit_outlined,
+                          color: Color(0xff6C4DDC),
+                          size: 20,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Información del Certificado',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 20),
             
             // Título del certificado
             TextFormField(
               controller: _titleController,
               decoration: InputDecoration(
                 labelText: 'Título del Certificado',
+                      hintText: 'Ej: Certificado de Graduación en Ingeniería de Sistemas',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                prefixIcon: Icon(Icons.title),
-                hintText: 'Ej: Certificado de Graduación en Ingeniería de Sistemas',
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: Icon(Icons.title, color: Color(0xff6C4DDC)),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -702,51 +1080,118 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
             
             SizedBox(height: 16),
             
-            // Descripción
+            // Descripción (Opcional)
             TextFormField(
               controller: _descriptionController,
               decoration: InputDecoration(
-                labelText: 'Descripción',
+                labelText: 'Descripción (Opcional)',
+                      hintText: 'Descripción detallada del certificado...',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                prefixIcon: Icon(Icons.description),
-                hintText: 'Descripción detallada del certificado...',
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: Icon(Icons.description_outlined, color: Color(0xff6C4DDC)),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
               maxLines: 3,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa una descripción';
-                }
-                return null;
-              },
+                  ),
+                ],
+              ),
             ),
             
             SizedBox(height: 32),
             
-            // Botón de emisión
-            SizedBox(
+            // Botón de emisión mejorado
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xff6C4DDC).withOpacity(0.4),
+                    blurRadius: 15,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: SizedBox(
               width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
+                height: 56,
+                child: ElevatedButton.icon(
                 onPressed: _isLoading ? null : _emitCertificate,
+                  icon: _isLoading
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Icon(Icons.send, size: 22),
+                  label: Text(
+                    _isLoading ? 'Emitiendo...' : 'Emitir Certificado',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Color(0xff6C4DDC),
                   foregroundColor: Colors.white,
+                    elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(16),
                   ),
+                    padding: EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: _isLoading
-                    ? CircularProgressIndicator(color: Colors.white)
-                    : Text(
-                        'Emitir Certificado',
-                        style: TextStyle(fontSize: 16),
                       ),
               ),
             ),
+            
+            SizedBox(height: 20),
           ],
         ),
+      ),
+    );
+  }
+
+  // Widget para mostrar chips de formato
+  Widget _buildFormatChip(String label, IconData icon, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -801,36 +1246,35 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
           // Contenido del certificado
           Column(
             children: [
-              // Header
-              if (template.layout.showHeader)
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(16), // Reducir padding
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        _parseColor(template.design.primaryColor),
-                        _parseColor(template.design.secondaryColor),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(template.design.borderRadius),
-                      topRight: Radius.circular(template.design.borderRadius),
-                    ),
+              // Header - Siempre mostrar
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      _parseColor(template.design.primaryColor),
+                      _parseColor(template.design.secondaryColor),
+                    ],
                   ),
-                  child: Text(
-                    'CERTIFICADO',
-                    style: _getTextStyle(
-                      template.design.titleFontFamily,
-                      template.design.titleFontSize * 0.9, // Aumentar un poco para 500px
-                      _parseColor(template.design.headerTextColor),
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(template.design.borderRadius),
+                    topRight: Radius.circular(template.design.borderRadius),
                   ),
                 ),
+                child: Text(
+                  'CERTIFICADO',
+                  style: _getTextStyle(
+                    template.design.titleFontFamily,
+                    template.design.titleFontSize, // Usar tamaño completo
+                    _parseColor(template.design.headerTextColor),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
               
               // Línea decorativa
               Container(
@@ -857,40 +1301,40 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                         'Se certifica que',
                         style: _getTextStyle(
                           template.design.subtitleFontFamily,
-                          template.design.subtitleFontSize * 0.9, // Aumentar un poco para 500px
+                          template.design.subtitleFontSize, // Usar tamaño completo
                           _parseColor(template.design.textColor),
                         ),
                         textAlign: TextAlign.center,
                       ),
                       
-                      SizedBox(height: 25), // Aumentar espaciado
+                      SizedBox(height: 30),
                       
                       // Nombre del estudiante (campo dinámico)
                       Text(
                         student['fullName'] ?? 'Juan Pérez',
                         style: _getTextStyle(
                           template.design.titleFontFamily,
-                          (template.design.subtitleFontSize + 8) * 0.9, // Aumentar un poco
+                          template.design.subtitleFontSize + 8, // Usar tamaño completo
                           _parseColor(template.design.textColor),
                           fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
-                        maxLines: 2, // Limitar líneas
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       
-                      SizedBox(height: 25), // Aumentar espaciado
+                      SizedBox(height: 30),
                       
                       // Descripción
                       Text(
                         'Ha completado exitosamente el programa de estudios',
                         style: _getTextStyle(
                           template.design.bodyFontFamily,
-                          template.design.bodyFontSize * 0.9, // Aumentar un poco
+                          template.design.bodyFontSize, // Usar tamaño completo
                           _parseColor(template.design.textColor),
                         ),
                         textAlign: TextAlign.center,
-                        maxLines: 2, // Limitar líneas
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       
@@ -907,7 +1351,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                 template.design.issuerName,
                                 style: _getTextStyle(
                                   template.design.smallFontFamily,
-                                  (template.design.smallFontSize + 2) * 0.8, // Reducir tamaño
+                                  template.design.smallFontSize + 2, // Usar tamaño completo
                                   _parseColor(template.design.textColor),
                                 ),
                               ),
@@ -915,7 +1359,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                 template.design.issuerTitleLabel,
                                 style: _getTextStyle(
                                   template.design.smallFontFamily,
-                                  template.design.smallFontSize * 0.8, // Reducir tamaño
+                                  template.design.smallFontSize, // Usar tamaño completo
                                   _parseColor(template.design.textColor),
                                 ),
                               ),
@@ -928,7 +1372,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                 template.design.dateLabel,
                                 style: _getTextStyle(
                                   template.design.smallFontFamily,
-                                  template.design.smallFontSize * 0.8, // Reducir tamaño
+                                  template.design.smallFontSize, // Usar tamaño completo
                                   _parseColor(template.design.textColor),
                                 ),
                               ),
@@ -1170,8 +1614,14 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
       print('  - Tipo de certificado: $_selectedCertificateType');
       print('  - Título: ${_titleController.text.trim()}');
       print('  - Descripción: ${_descriptionController.text.trim()}');
-      print('  - Usar plantilla: $_useTemplate');
-      print('  - Usar certificado personalizado: $_useCustomCertificate');
+      // Validar que se haya cargado un certificado personalizado
+      if (_customCertificateBytes == null) {
+        AlertService.showError(context, 'Error', 'Debes cargar un certificado personalizado');
+        setState(() => _isLoading = false);
+        return;
+      }
+      
+      print('  - Usar certificado personalizado: true');
       
       // Preparar datos del certificado
       Map<String, dynamic> certificateData = {
@@ -1179,22 +1629,12 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
         'program': _selectedStudent!['program'],
         'faculty': _selectedStudent!['faculty'],
         'issuedByRole': 'emisor',
-        'useTemplate': _useTemplate,
-        'useCustomCertificate': _useCustomCertificate,
+        'useTemplate': false,
+        'useCustomCertificate': true,
       };
       
-      // Agregar datos de plantilla si se usa
-      if (_useTemplate && _selectedTemplate != null) {
-        certificateData['templateId'] = _selectedTemplate!.id;
-        certificateData['templateData'] = {
-          'name': _selectedTemplate!.name,
-          'design': _selectedTemplate!.design.toMap(),
-          'layout': _selectedTemplate!.layout.toMap(),
-        };
-      }
-      
-      // Agregar datos de certificado personalizado si se usa
-      if (_useCustomCertificate && _customCertificateBytes != null) {
+      // Agregar datos de certificado personalizado (siempre se usa)
+      if (_customCertificateBytes != null) {
         // Convertir bytes a base64 para almacenar
         String base64Data = base64Encode(_customCertificateBytes!);
         certificateData['customCertificateData'] = {
@@ -1205,7 +1645,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
         };
       }
       
-      final certificateId = await CertificateService.createCertificate(
+      final certificateId = await CertificateAdapter.createCertificate(
         studentId: _selectedStudent!['id'],
         certificateType: _selectedCertificateType,
         title: _titleController.text.trim(),
@@ -1245,7 +1685,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
         _selectedCertificateType = 'graduation';
         _useTemplate = false;
         _selectedTemplate = null;
-        _useCustomCertificate = false;
+        _useCustomCertificate = true; // Mantener siempre activo
         _customCertificateBytes = null;
         _customCertificateFileName = null;
         _customCertificateMimeType = null;

@@ -2,8 +2,12 @@
 // Pantalla de detalles de una postulación específica
 
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:html' as html;
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/application.dart';
 import '../../services/application_service.dart';
+import '../../services/supabase/supabase_certificate_service.dart';
 
 class ApplicationDetailsScreen extends StatefulWidget {
   final Application application;
@@ -257,6 +261,11 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.blue[200]!),
                   ),
+                  child: InkWell(
+                    onTap: () => _viewCertificate(cert),
+                    child: Row(
+                      children: [
+                        Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -276,6 +285,7 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
                           color: Colors.grey[600],
                         ),
                       ),
+                              if (cert['issuedAt'] != null) ...[
                       SizedBox(height: 4),
                       Text(
                         'Emitido: ${_formatDate(DateTime.parse(cert['issuedAt']))}',
@@ -285,6 +295,12 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
                         ),
                       ),
                     ],
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.visibility, size: 18, color: Color(0xff6C4DDC)),
+                      ],
+                    ),
                   ),
                 ),
               ).toList(),
@@ -312,20 +328,31 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
               ),
             ),
             SizedBox(height: 16),
-            Container(
+            if (widget.application.motivationPdfData != null && widget.application.motivationPdfData!.isNotEmpty)
+              SizedBox(
               width: double.infinity,
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Text(
-                widget.application.motivationLetter,
-                style: TextStyle(
-                  fontSize: isWeb ? 16 : 14,
-                  color: Colors.grey[700],
-                  height: 1.5,
+                child: OutlinedButton.icon(
+                  onPressed: () => _openMotivationPdf(),
+                  icon: Icon(Icons.picture_as_pdf, size: 18),
+                  label: Text('Ver PDF de Carta de Motivación'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Color(0xff6C4DDC),
+                    side: BorderSide(color: Color(0xff6C4DDC)),
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: null,
+                  icon: Icon(Icons.description, size: 18),
+                  label: Text('Carta de motivación en texto'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey,
+                    side: BorderSide(color: Colors.grey),
+                    padding: EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
@@ -333,6 +360,30 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
         ),
       ),
     );
+  }
+
+  void _openMotivationPdf() async {
+    final pdfData = widget.application.motivationPdfData;
+    if (pdfData == null || pdfData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No hay PDF de carta de motivación disponible'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    try {
+      await _openPdfFromBase64(pdfData);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al abrir PDF: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildReviewInfo(bool isWeb) {
@@ -533,15 +584,243 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
     }
   }
 
-  void _downloadCV() {
-    // TODO: Implementar descarga de CV
+  void _downloadCV() async {
+    try {
+      final cvUrl = widget.application.cvUrl;
+      if (cvUrl.isEmpty) {
+        throw Exception('CV no disponible');
+      }
+
+      // Si es una URL de Firebase Storage o HTTP(S), abrirla
+      if (cvUrl.startsWith('http://') || cvUrl.startsWith('https://')) {
+        final uri = Uri.parse(cvUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          throw Exception('No se pudo abrir la URL del CV');
+        }
+      } else {
+        // Es base64, convertir y abrir con blob URL
+        await _openPdfFromBase64(cvUrl);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al abrir CV: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openPdfFromBase64(String base64Data) async {
+    try {
+      print('🔄 Abriendo PDF desde base64...');
+      
+      // Determinar si es base64 puro o data URL
+      String dataUrl;
+      if (base64Data.startsWith('data:application/pdf;base64,')) {
+        dataUrl = base64Data;
+      } else if (base64Data.startsWith('data:')) {
+        dataUrl = base64Data;
+      } else {
+        dataUrl = 'data:application/pdf;base64,$base64Data';
+      }
+      
+      // Extraer el base64 del data URL
+      final String base64Content = dataUrl.contains(',') ? dataUrl.split(',')[1] : dataUrl;
+      
+      // Decodificar base64 a bytes
+      final List<int> bytes = base64Decode(base64Content);
+      print('📊 Bytes decodificados: ${bytes.length} bytes');
+      
+      // Crear blob usando JavaScript
+      final blob = html.Blob([bytes], 'application/pdf');
+      
+      // Crear URL del blob
+      final blobUrl = html.Url.createObjectUrl(blob);
+      print('📄 Blob URL creada: $blobUrl');
+      
+      // Abrir en nueva pestaña
+      html.window.open(blobUrl, '_blank');
+      
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Funcionalidad de descarga en desarrollo'),
-        backgroundColor: Colors.blue,
+          content: Text('PDF abierto en nueva pestaña'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+      // Limpiar la URL del blob después de un tiempo
+      Future.delayed(Duration(seconds: 30), () {
+        html.Url.revokeObjectUrl(blobUrl);
+        print('🧹 Blob URL limpiada');
+      });
+      
+    } catch (e) {
+      print('❌ Error al abrir PDF: $e');
+      throw Exception('Error al abrir PDF: $e');
+    }
+  }
+
+  void _viewCertificate(Map<String, dynamic> cert) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.verified, color: Color(0xff6C4DDC), size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                cert['title'] ?? 'Certificado',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildCertificateInfoRow(
+                      Icons.category,
+                      'Tipo',
+                      cert['type'] ?? 'N/A',
+                    ),
+                    SizedBox(height: 8),
+                    _buildCertificateInfoRow(
+                      Icons.school,
+                      'Institución',
+                      cert['institutionName'] ?? 'N/A',
+                    ),
+                    if (cert['issuedAt'] != null) ...[
+                      SizedBox(height: 8),
+                      _buildCertificateInfoRow(
+                        Icons.calendar_today,
+                        'Fecha de Emisión',
+                        _formatDate(DateTime.parse(cert['issuedAt'])),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _openCertificatePdf(cert);
+                  },
+                  icon: Icon(Icons.picture_as_pdf, size: 20),
+                  label: Text('Ver PDF del Certificado'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xff6C4DDC),
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cerrar', style: TextStyle(color: Colors.grey[700])),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _buildCertificateInfoRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Color(0xff6C4DDC)),
+        SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Color(0xff2E2F44),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openCertificatePdf(Map<String, dynamic> cert) async {
+    try {
+      final certId = cert['id'];
+      if (certId == null || certId.toString().isEmpty) {
+        throw Exception('ID de certificado no disponible');
+      }
+
+      // Obtener el certificado completo de Supabase
+      final certificate = await SupabaseCertificateService.getCertificate(certId.toString());
+      
+      if (certificate == null) {
+        throw Exception('Certificado no encontrado');
+      }
+
+      // Buscar PDF en el campo data
+      final data = certificate.data;
+      final customData = data['customCertificateData'];
+      
+      String? pdfData;
+      if (customData is String) {
+        pdfData = customData;
+      } else if (customData is Map<String, dynamic>) {
+        pdfData = customData['fileData'] ?? 
+                 customData['data'] ?? 
+                 customData['content'] ?? 
+                 customData['base64'] ??
+                 customData['pdfData'];
+      }
+
+      if (pdfData != null && pdfData.isNotEmpty) {
+        await _openPdfFromBase64(pdfData);
+      } else {
+        throw Exception('No hay PDF disponible para este certificado');
+      }
+    } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text('Error al abrir PDF del certificado: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
 
   Future<void> _withdrawApplication() async {
     final confirmed = await showDialog<bool>(

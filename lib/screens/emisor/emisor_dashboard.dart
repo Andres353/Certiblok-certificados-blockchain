@@ -4,9 +4,14 @@
 import 'package:flutter/material.dart';
 import '../../services/user_context_service.dart';
 import '../../services/emisor_permission_service.dart';
+import '../../services/institution_status_service.dart';
+import '../../widgets/suspended_institution_widget.dart';
 import '../certificates/emit_certificate_screen.dart';
 import '../certificates/my_certificates_screen.dart';
-import '../certificates/template_management_screen.dart';
+import '../certificates/basic_template_editor_screen.dart';
+import 'bulk_emit_certificates_screen.dart';
+import 'emisor_manage_students_screen.dart';
+import 'emisor_statistics_screen.dart';
 
 class EmisorDashboard extends StatefulWidget {
   @override
@@ -32,9 +37,24 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
     });
     
     if (context != null) {
+      // Verificar si la institución está suspendida
+      if (context.institutionId != null) {
+        final isSuspended = await InstitutionStatusService.isInstitutionSuspended(context.institutionId!);
+        if (isSuspended) {
+          setState(() {
+            _isLoading = false;
+          });
+          return; // Mostrar pantalla de suspensión
+        }
+      }
+      
       await _loadPermissions();
       await _loadAllowedStudents();
     }
+    
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   Future<void> _loadPermissions() async {
@@ -66,6 +86,65 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('Cargando...'),
+          backgroundColor: Color(0xff6C4DDC),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Verificar si la institución está suspendida
+    if (_userContext?.institutionId != null) {
+      return FutureBuilder<bool>(
+        future: InstitutionStatusService.isInstitutionSuspended(_userContext!.institutionId!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('Verificando...'),
+                backgroundColor: Color(0xff6C4DDC),
+                foregroundColor: Colors.white,
+              ),
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          
+            if (snapshot.hasData && snapshot.data == true) {
+              return FutureBuilder(
+                future: InstitutionStatusService.getSuspendedInstitutionInfo(_userContext!.institutionId!),
+                builder: (context, institutionSnapshot) {
+                  if (institutionSnapshot.hasData && institutionSnapshot.data != null) {
+                    return SuspendedInstitutionWidget(
+                      institution: institutionSnapshot.data!,
+                      userRole: 'emisor',
+                    );
+                  }
+                  return Scaffold(
+                    appBar: AppBar(
+                      title: Text('Error'),
+                      backgroundColor: Color(0xff6C4DDC),
+                      foregroundColor: Colors.white,
+                    ),
+                    body: Center(child: Text('Error al cargar información de la institución')),
+                  );
+                },
+              );
+            }
+          
+          // Si no está suspendida, mostrar el dashboard normal
+          return _buildNormalDashboard(context);
+        },
+      );
+    }
+    
+    return _buildNormalDashboard(context);
+  }
+
+  Widget _buildNormalDashboard(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Dashboard de Emisor'),
@@ -314,10 +393,10 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
               children: [
                 _buildFunctionalityCard(
                   icon: Icons.description,
-                  title: 'Emitir Certificado',
-                  subtitle: 'Crear nuevo certificado',
+                  title: 'Emitir Certificados',
+                  subtitle: 'Emisión individual y masiva',
                   color: Color(0xff6C4DDC),
-                  onTap: () => _navigateToEmitCertificate(),
+                  onTap: () => _showEmitOptions(),
                 ),
                 _buildFunctionalityCard(
                   icon: Icons.list_alt,
@@ -348,32 +427,11 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
                   onTap: () => _navigateToTemplates(),
                 ),
                 _buildFunctionalityCard(
-                  icon: Icons.settings,
-                  title: 'Configuración',
-                  subtitle: 'Ajustes del emisor',
-                  color: Color(0xff9C27B0),
-                  onTap: () => _navigateToSettings(),
-                ),
-                _buildFunctionalityCard(
-                  icon: Icons.assignment_turned_in,
-                  title: 'Gestionar Postulaciones',
-                  subtitle: 'Revisar postulaciones de estudiantes',
-                  color: Color(0xffFF5722),
-                  onTap: () => _navigateToApplicationsManagement(),
-                ),
-                _buildFunctionalityCard(
                   icon: Icons.work_outline,
-                  title: 'Crear Programa',
-                  subtitle: 'Crear nueva oportunidad de programa',
-                  color: Color(0xff795548),
-                  onTap: () => _navigateToCreateProgram(),
-                ),
-                _buildFunctionalityCard(
-                  icon: Icons.help,
-                  title: 'Ayuda',
-                  subtitle: 'Soporte y guías',
-                  color: Color(0xff607D8B),
-                  onTap: () => _navigateToHelp(),
+                  title: 'Programas y Postulaciones',
+                  subtitle: 'Gestionar programas y postulaciones',
+                  color: Color(0xff9C27B0),
+                  onTap: () => _showProgramsAndApplicationsMenu(),
                 ),
               ],
             );
@@ -610,6 +668,138 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
   }
 
   // Métodos de navegación para las funcionalidades
+  void _showEmitOptions() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.add_circle, color: Color(0xff6C4DDC), size: 28),
+              SizedBox(width: 12),
+              Text('Emitir Certificado'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Selecciona el tipo de emisión:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 20),
+              
+              // Opción 1: Emisión Individual
+              Container(
+                margin: EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xff6C4DDC), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _navigateToEmitCertificate();
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_add, color: Color(0xff6C4DDC), size: 32),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Emisión Individual',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff2E2F44),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Emitir un certificado a un estudiante',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Color(0xff6C4DDC), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Opción 2: Emisión Masiva
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xff6C4DDC), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _navigateToBulkEmit();
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.send, color: Color(0xff6C4DDC), size: 32),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Emisión Masiva',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff2E2F44),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Emitir múltiples certificados a la vez',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Color(0xff6C4DDC), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancelar', style: TextStyle(color: Colors.grey[600])),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _navigateToEmitCertificate() {
     Navigator.push(
       context,
@@ -618,6 +808,16 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
       ),
     );
   }
+
+  void _navigateToBulkEmit() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BulkEmitCertificatesScreen(),
+      ),
+    );
+  }
+
 
   void _navigateToMyCertificates() {
     Navigator.push(
@@ -629,41 +829,162 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
   }
 
   void _navigateToManageStudents() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Navegando a Gestionar Estudiantes...'),
-        backgroundColor: Color(0xffFF9800),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EmisorManageStudentsScreen(),
       ),
     );
-    // TODO: Implementar navegación a pantalla de gestión de estudiantes
   }
 
   void _navigateToStatistics() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Navegando a Estadísticas...'),
-        backgroundColor: Color(0xff2196F3),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EmisorStatisticsScreen(),
       ),
     );
-    // TODO: Implementar navegación a pantalla de estadísticas
   }
 
-  void _navigateToSettings() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Navegando a Configuración...'),
-        backgroundColor: Color(0xff9C27B0),
-      ),
-    );
-    // TODO: Implementar navegación a pantalla de configuración
-  }
 
   void _navigateToTemplates() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => TemplateManagementScreen(),
+        builder: (context) => BasicTemplateEditorScreen(),
       ),
+    );
+  }
+
+  void _showProgramsAndApplicationsMenu() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.work_outline, color: Color(0xff6C4DDC), size: 28),
+              SizedBox(width: 12),
+              Text('Programas y Postulaciones'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Selecciona la acción que deseas realizar:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 20),
+              
+              // Opción 1: Crear Programa
+              Container(
+                margin: EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xff6C4DDC), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _navigateToCreateProgram();
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.work_outline, color: Color(0xff6C4DDC), size: 32),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Crear Programa',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff2E2F44),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Crear nueva oportunidad de programa',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Color(0xff6C4DDC), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Opción 2: Gestionar Postulaciones
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xff6C4DDC), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _navigateToApplicationsManagement();
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.assignment_turned_in, color: Color(0xff6C4DDC), size: 32),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Gestionar Postulaciones',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff2E2F44),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Revisar y gestionar postulaciones de estudiantes',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Color(0xff6C4DDC), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancelar', style: TextStyle(color: Colors.grey[600])),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -675,15 +996,6 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
     Navigator.pushNamed(context, '/create-program');
   }
 
-  void _navigateToHelp() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Navegando a Ayuda...'),
-        backgroundColor: Color(0xff607D8B),
-      ),
-    );
-    // TODO: Implementar navegación a pantalla de ayuda
-  }
 
   IconData _getEmisorTypeIcon(String emisorType) {
     switch (emisorType) {

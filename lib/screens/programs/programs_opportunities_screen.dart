@@ -3,10 +3,9 @@
 
 import 'package:flutter/material.dart';
 import '../../models/program_opportunity.dart';
-import '../../services/programs_opportunities_service.dart';
+import '../../services/adapters/programs_adapter.dart';
 import '../../services/user_context_service.dart';
 import 'program_details_screen.dart';
-import 'application_form_screen.dart';
 
 class ProgramsOpportunitiesScreen extends StatefulWidget {
   @override
@@ -30,17 +29,30 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
     setState(() => _isLoading = true);
     
     try {
-      print('🔄 Cargando programas para estudiantes...');
+      final context = UserContextService.currentContext;
+      if (context == null) {
+        throw Exception('Usuario no autenticado');
+      }
+
+      // Obtener todas las pasantías disponibles
+      final allPrograms = await ProgramsAdapter.getAllProgramsForDebug();
+
+      // Filtrar pasantías activas de la institución del estudiante
+      final activePrograms = allPrograms.where((program) => 
+        program.isActive && 
+        program.institutionId == context.institutionId
+      ).toList();
+
+      // Filtrar pasantías que incluyan la carrera del estudiante
+      List<ProgramOpportunity> availablePrograms = [];
       
-      // Para estudiantes, mostrar todos los programas disponibles
-      final programs = await ProgramsOpportunitiesService.getAllProgramsForDebug();
-      
-      // Filtrar solo programas activos y abiertos para postulaciones
-      final availablePrograms = programs.where((program) {
-        return program.isActive && program.isOpenForApplications;
-      }).toList();
-      
-      print('📊 Programas disponibles: ${availablePrograms.length}');
+      if (context.programId != null) {
+        availablePrograms = activePrograms.where((program) => 
+          program.careerIds.contains(context.programId!)
+        ).toList();
+      } else {
+        availablePrograms = activePrograms; // Mostrar todas si no tiene carrera
+      }
       
       setState(() {
         _programs = availablePrograms;
@@ -49,12 +61,11 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
       });
       
       if (availablePrograms.isEmpty) {
-        _showInfoSnackBar('No hay programas disponibles en este momento');
+        _showInfoSnackBar('No hay pasantías disponibles para tu carrera');
       }
     } catch (e) {
-      print('❌ Error cargando programas: $e');
       setState(() => _isLoading = false);
-      _showErrorSnackBar('Error al cargar programas: $e');
+      _showErrorSnackBar('Error al cargar pasantías: $e');
     }
   }
 
@@ -97,7 +108,7 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Programas y Pasantías'),
+        title: Text('Pasantías Disponibles'),
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -200,13 +211,13 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.work_outline,
+            Icons.school_outlined,
             size: 64,
             color: Colors.grey[400],
           ),
           SizedBox(height: 16),
           Text(
-            'No hay programas disponibles',
+            'No hay pasantías disponibles',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
@@ -215,7 +226,7 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
           ),
           SizedBox(height: 8),
           Text(
-            'No se encontraron programas que coincidan con tu búsqueda',
+            'No se encontraron pasantías que coincidan con tu búsqueda',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[500],
@@ -238,156 +249,210 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
   }
 
   Widget _buildProgramsList(bool isWeb) {
-    if (isWeb) {
-      return GridView.builder(
-        padding: EdgeInsets.all(16),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 1.2,
-        ),
-        itemCount: _filteredPrograms.length,
-        itemBuilder: (context, index) => _buildProgramCard(_filteredPrograms[index], isWeb),
-      );
-    } else {
-      return ListView.builder(
-        padding: EdgeInsets.all(16),
-        itemCount: _filteredPrograms.length,
-        itemBuilder: (context, index) => _buildProgramCard(_filteredPrograms[index], isWeb),
-      );
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calcular número de columnas para ajustar a la pantalla (igual que dashboard principal)
+        int crossAxisCount;
+        double childAspectRatio;
+        
+        // Calcular el espacio disponible
+        final availableWidth = constraints.maxWidth;
+        
+        if (availableWidth > 1400) {
+          crossAxisCount = 4;
+          childAspectRatio = 1.6; // Más anchos y menos altos
+        } else if (availableWidth > 1000) {
+          crossAxisCount = 3;
+          childAspectRatio = 1.5; // Más anchos y menos altos
+        } else if (availableWidth > 700) {
+          crossAxisCount = 2;
+          childAspectRatio = 1.6; // Más anchos y menos altos
+        } else {
+          crossAxisCount = 1;
+          childAspectRatio = 3.0; // Más anchos y menos altos
+        }
+        
+        return GridView.builder(
+          padding: EdgeInsets.all(16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: childAspectRatio,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: _filteredPrograms.length,
+          itemBuilder: (context, index) {
+            final program = _filteredPrograms[index];
+            return _buildProgramCard(program);
+          },
+        );
+      },
+    );
   }
 
-  Widget _buildProgramCard(ProgramOpportunity program, bool isWeb) {
+  Widget _buildProgramCard(ProgramOpportunity program) {
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _navigateToProgramDetails(program),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header con título y estado
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      program.title,
-                      style: TextStyle(
-                        fontSize: isWeb ? 18 : 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xff2E2F44),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.white,
+        ),
+        child: InkWell(
+          onTap: () => _navigateToProgramDetails(program),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Título del programa
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Color(0xff6C4DDC).withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      width: 1,
                     ),
                   ),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Color(int.parse(program.statusColor.replaceAll('#', '0xFF'))).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      program.status,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Color(int.parse(program.statusColor.replaceAll('#', '0xFF'))),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              
-              SizedBox(height: 8),
-              
-              // Institución
-              Row(
-                children: [
-                  Icon(Icons.school, size: 16, color: Colors.grey[600]),
-                  SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      program.institutionName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              
-              SizedBox(height: 4),
-              
-              // Facultad/Carrera
-              Row(
-                children: [
-                  Icon(Icons.menu_book, size: 16, color: Colors.grey[600]),
-                  SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '${program.careerNames.join(', ')}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              
-              SizedBox(height: 12),
-              
-              // Descripción
-              Text(
-                program.description,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[700],
-                ),
-                maxLines: isWeb ? 3 : 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              
-              Spacer(),
-              
-              // Footer con información adicional
-              Row(
-                children: [
-                  Icon(Icons.people, size: 16, color: Colors.grey[500]),
-                  SizedBox(width: 4),
-                  Text(
-                    '${program.currentApplications}/${program.maxApplications}',
+                  child: Text(
+                    program.title,
                     style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[500],
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff2E2F44),
+                      height: 1.2,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
-                  Spacer(),
-                  if (program.isOpenForApplications) ...[
-                    Icon(Icons.schedule, size: 16, color: Colors.grey[500]),
-                    SizedBox(width: 4),
-                    Text(
-                      '${program.daysUntilDeadline} días',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
+                ),
+                
+                SizedBox(height: 12),
+                
+                // Información en badges
+                Row(
+                  children: [
+                    // Estado
+                    Expanded(
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(int.parse(program.statusColor.replaceAll('#', '0xFF'))).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Color(int.parse(program.statusColor.replaceAll('#', '0xFF'))).withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          program.status,
+                          style: TextStyle(
+                            color: Color(int.parse(program.statusColor.replaceAll('#', '0xFF'))),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                    
+                    SizedBox(width: 6),
+                    
+                    // Postulantes
+                    Expanded(
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(0xff6C4DDC).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Color(0xff6C4DDC).withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          '${program.currentApplications}/${program.maxApplications}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xff6C4DDC),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
-                ],
-              ),
-            ],
+                ),
+                
+                SizedBox(height: 12),
+                
+                // Información de institución
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.school, size: 14, color: Colors.grey[600]),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          program.institutionName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                SizedBox(height: 6),
+                
+                // Carreras
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.menu_book, size: 14, color: Colors.grey[600]),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          program.careerNames.join(', '),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

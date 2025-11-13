@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:html' as html;
 import 'dart:convert';
 import '../../models/program_opportunity.dart';
-import '../../services/programs_opportunities_service.dart';
+import '../../services/adapters/programs_adapter.dart';
 import '../../services/user_context_service.dart';
 import 'application_form_screen.dart';
 
@@ -36,7 +36,7 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
     try {
       final context = UserContextService.currentContext;
       if (context != null && context.userRole == 'student') {
-        final canApply = await ProgramsOpportunitiesService.canStudentApply(
+        final canApply = await ProgramsAdapter.canStudentApply(
           widget.program.id,
           context.userId,
         );
@@ -1012,6 +1012,7 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
       _showErrorSnackBar('Error al mostrar URL: $e');
     }
   }
+
 }
 
 class _BackgroundPatternPainter extends CustomPainter {

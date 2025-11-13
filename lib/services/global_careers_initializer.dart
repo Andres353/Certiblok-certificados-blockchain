@@ -1,10 +1,10 @@
 // lib/services/global_careers_initializer.dart
 // Servicio para inicializar carreras globales comunes
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class GlobalCareersInitializer {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final SupabaseClient _client = Supabase.instance.client;
 
   // Lista de carreras globales comunes
   static final List<Map<String, dynamic>> globalCareers = [
@@ -17,9 +17,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el desarrollo de software y sistemas informáticos',
       'category': 'Ingeniería',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Ingeniería Industrial',
@@ -29,9 +29,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la optimización de procesos industriales',
       'category': 'Ingeniería',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Ingeniería Civil',
@@ -41,9 +41,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la construcción y diseño de infraestructura',
       'category': 'Ingeniería',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Ingeniería Mecánica',
@@ -53,9 +53,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el diseño y mantenimiento de sistemas mecánicos',
       'category': 'Ingeniería',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Ingeniería Electrónica',
@@ -65,9 +65,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en sistemas electrónicos y circuitos',
       'category': 'Ingeniería',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Ingeniería Química',
@@ -77,9 +77,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en procesos químicos industriales',
       'category': 'Ingeniería',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
 
     // Ciencias de la Salud
@@ -91,9 +91,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el diagnóstico y tratamiento de enfermedades',
       'category': 'Ciencias de la Salud',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Enfermería',
@@ -103,9 +103,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el cuidado y atención de pacientes',
       'category': 'Ciencias de la Salud',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Odontología',
@@ -115,9 +115,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la salud bucal y dental',
       'category': 'Ciencias de la Salud',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Psicología',
@@ -127,9 +127,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio del comportamiento humano',
       'category': 'Ciencias de la Salud',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
 
     // Ciencias Económicas y Administrativas
@@ -141,9 +141,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la gestión y administración empresarial',
       'category': 'Ciencias Económicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Contaduría Pública',
@@ -153,9 +153,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la contabilidad y finanzas',
       'category': 'Ciencias Económicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Economía',
@@ -165,9 +165,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio de los sistemas económicos',
       'category': 'Ciencias Económicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Mercadeo',
@@ -177,9 +177,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en estrategias de mercado y ventas',
       'category': 'Ciencias Económicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
 
     // Ciencias Sociales y Humanas
@@ -191,9 +191,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio de las leyes y la justicia',
       'category': 'Ciencias Sociales',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Comunicación Social',
@@ -203,9 +203,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en medios de comunicación y periodismo',
       'category': 'Ciencias Sociales',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Trabajo Social',
@@ -215,9 +215,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el apoyo y desarrollo social',
       'category': 'Ciencias Sociales',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
 
     // Ciencias Básicas
@@ -229,9 +229,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio de las matemáticas puras',
       'category': 'Ciencias Básicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Física',
@@ -241,9 +241,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio de las leyes físicas',
       'category': 'Ciencias Básicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Química',
@@ -253,9 +253,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio de la materia y sus transformaciones',
       'category': 'Ciencias Básicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Biología',
@@ -265,9 +265,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el estudio de los seres vivos',
       'category': 'Ciencias Básicas',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
 
     // Artes y Diseño
@@ -279,9 +279,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en el diseño y construcción de espacios',
       'category': 'Artes y Diseño',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Diseño Gráfico',
@@ -291,9 +291,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la comunicación visual y diseño',
       'category': 'Artes y Diseño',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
     {
       'name': 'Artes Plásticas',
@@ -303,9 +303,9 @@ class GlobalCareersInitializer {
       'modality': 'presencial',
       'description': 'Carrera enfocada en la expresión artística y creativa',
       'category': 'Artes y Diseño',
-      'isGlobal': true,
+      'is_global': true,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     },
   ];
 
@@ -317,15 +317,16 @@ class GlobalCareersInitializer {
 
       for (final career in globalCareers) {
         // Verificar si la carrera ya existe
-        QuerySnapshot existingCareer = await _firestore
-            .collection('programs')
-            .where('name', isEqualTo: career['name'])
-            .where('isGlobal', isEqualTo: true)
-            .get();
+        final existingCareer = await _client
+            .from('programs')
+            .select('id')
+            .eq('name', career['name'])
+            .eq('is_global', true)
+            .limit(1);
 
-        if (existingCareer.docs.isEmpty) {
+        if (existingCareer.isEmpty) {
           // Agregar la carrera global
-          await _firestore.collection('programs').add(career);
+          await _client.from('programs').insert(career);
           addedCount++;
         } else {
           skippedCount++;
@@ -354,19 +355,13 @@ class GlobalCareersInitializer {
   // Obtener todas las carreras globales
   static Future<List<Map<String, dynamic>>> getGlobalCareers() async {
     try {
-      QuerySnapshot querySnapshot = await _firestore
-          .collection('programs')
-          .where('isGlobal', isEqualTo: true)
-          .where('status', isEqualTo: 'active')
-          .get();
+      final response = await _client
+          .from('programs')
+          .select('*')
+          .eq('is_global', true)
+          .eq('status', 'active');
 
-      return querySnapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return {
-          'id': doc.id,
-          ...data,
-        };
-      }).toList();
+      return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Error obteniendo carreras globales: $e');
       return [];
@@ -377,13 +372,14 @@ class GlobalCareersInitializer {
   static Future<Map<String, dynamic>> addGlobalCareer(Map<String, dynamic> careerData) async {
     try {
       // Verificar si ya existe
-      QuerySnapshot existingCareer = await _firestore
-          .collection('programs')
-          .where('name', isEqualTo: careerData['name'])
-          .where('isGlobal', isEqualTo: true)
-          .get();
+      final existingCareer = await _client
+          .from('programs')
+          .select('id')
+          .eq('name', careerData['name'])
+          .eq('is_global', true)
+          .limit(1);
 
-      if (existingCareer.docs.isNotEmpty) {
+      if (existingCareer.isNotEmpty) {
         return {
           'success': false,
           'message': 'La carrera ya existe en el sistema global',
@@ -393,12 +389,12 @@ class GlobalCareersInitializer {
       // Agregar como carrera global
       final globalCareer = {
         ...careerData,
-        'isGlobal': true,
+        'is_global': true,
         'status': 'active',
-        'createdAt': FieldValue.serverTimestamp(),
+        'created_at': DateTime.now().toIso8601String(),
       };
 
-      await _firestore.collection('programs').add(globalCareer);
+      await _client.from('programs').insert(globalCareer);
 
       return {
         'success': true,

@@ -3,7 +3,9 @@
 
 import 'package:flutter/material.dart';
 import '../../models/application.dart';
+import '../../models/program_opportunity.dart';
 import '../../services/application_service.dart';
+import '../../services/supabase/supabase_programs_service.dart';
 import '../../services/user_context_service.dart';
 import 'application_details_screen.dart';
 
@@ -14,46 +16,84 @@ class ApplicationsManagementScreen extends StatefulWidget {
 
 class _ApplicationsManagementScreenState extends State<ApplicationsManagementScreen> {
   List<Application> _applications = [];
+  List<ProgramOpportunity> _programs = [];
   bool _isLoading = true;
-  String _selectedFilter = 'all'; // all, pending, under_review, approved, rejected
   String _searchQuery = '';
+  String? _expandedProgramId; // Para controlar qué programa está expandido
+  Set<String> _processingApplications = {}; // IDs de aplicaciones que se están procesando
 
   @override
   void initState() {
     super.initState();
-    _loadApplications();
+    _loadData();
   }
 
-  Future<void> _loadApplications() async {
+  Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
     try {
+      final userContext = UserContextService.currentContext;
+      if (userContext?.institutionId == null) {
+        throw Exception('Usuario debe tener institución asignada');
+      }
+
+      // Cargar tanto aplicaciones como programas
       final applications = await ApplicationService.getInstitutionApplications();
+      
+      // Obtener todos los programas de la institución
+      final allPrograms = await SupabaseProgramsService.getProgramsByInstitution(userContext!.institutionId!);
+      
+      print('📊 Total programas en institución: ${allPrograms.length}');
+      
+      // Filtrar programas según el rol
+      List<ProgramOpportunity> programs;
+      if (userContext.isSuperAdmin) {
+        // Super admin ve todos los programas
+        programs = allPrograms;
+      } else if (userContext.userRole == 'admin_institution') {
+        // Los administradores ven todos los programas de su institución
+        programs = allPrograms;
+        print('📊 Administrador: mostrando todos los programas de la institución');
+      } else {
+        // Emisores solo ven programas creados por ellos
+        programs = allPrograms.where((program) {
+          final matches = program.createdBy == userContext.userId;
+          if (matches) {
+            print('✅ Programa ${program.title} creado por el usuario');
+          }
+          return matches;
+        }).toList();
+      }
+      
+      print('📊 Programas para mostrar: ${programs.length}');
+      
       setState(() {
         _applications = applications;
+        _programs = programs;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      _showErrorSnackBar('Error al cargar postulaciones: $e');
+      _showErrorSnackBar('Error al cargar datos: $e');
     }
   }
 
   List<Application> get _filteredApplications {
-    var filtered = _applications;
+    // No filtrar aplicaciones, retornar todas
+    return _applications;
+  }
+
+  List<ProgramOpportunity> get _filteredPrograms {
+    var filtered = _programs;
     
-    // Filtro por estado
-    if (_selectedFilter != 'all') {
-      filtered = filtered.where((app) => app.status.toString() == _selectedFilter).toList();
-    }
-    
-    // Filtro por búsqueda
+    // Filtro por búsqueda en programas (pasantías)
     if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((app) =>
-          app.studentName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          app.programTitle.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          app.studentEmail.toLowerCase().contains(_searchQuery.toLowerCase())
-      ).toList();
+      filtered = filtered.where((program) {
+        final query = _searchQuery.toLowerCase();
+        return program.title.toLowerCase().contains(query) ||
+            program.institutionName.toLowerCase().contains(query) ||
+            program.description.toLowerCase().contains(query);
+      }).toList();
     }
     
     return filtered;
@@ -72,7 +112,7 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
         elevation: 0,
         actions: [
           IconButton(
-            onPressed: _loadApplications,
+            onPressed: _loadData,
             icon: Icon(Icons.refresh),
             tooltip: 'Actualizar',
           ),
@@ -90,7 +130,7 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
           Expanded(
             child: _isLoading
                 ? Center(child: CircularProgressIndicator())
-                : _filteredApplications.isEmpty
+                : _filteredPrograms.isEmpty
                     ? _buildEmptyState()
                     : _buildApplicationsList(isWeb),
           ),
@@ -106,63 +146,23 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
         color: Colors.grey[50],
         border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
       ),
-      child: Column(
-        children: [
-          // Barra de búsqueda
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Buscar por estudiante, programa o email...',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            onChanged: (value) {
-              setState(() {
-                _searchQuery = value;
-              });
-            },
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: 'Buscar pasantía por nombre, institución o descripción...',
+          prefixIcon: Icon(Icons.search),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
           ),
-          
-          SizedBox(height: 12),
-          
-          // Filtros
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterChip('Todas', 'all'),
-                SizedBox(width: 8),
-                _buildFilterChip('Pendientes', 'pending'),
-                SizedBox(width: 8),
-                _buildFilterChip('En Revisión', 'under_review'),
-                SizedBox(width: 8),
-                _buildFilterChip('Aprobadas', 'approved'),
-                SizedBox(width: 8),
-                _buildFilterChip('Rechazadas', 'rejected'),
-              ],
-            ),
-          ),
-        ],
+          filled: true,
+          fillColor: Colors.white,
+        ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+          });
+        },
       ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, String value) {
-    final isSelected = _selectedFilter == value;
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        setState(() {
-          _selectedFilter = value;
-        });
-      },
-      selectedColor: Color(0xff6C4DDC).withOpacity(0.2),
-      checkmarkColor: Color(0xff6C4DDC),
     );
   }
 
@@ -266,17 +266,147 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
   }
 
   Widget _buildApplicationsList(bool isWeb) {
+    // Organizar aplicaciones por programa
+    Map<String, List<Application>> applicationsByProgram = {};
+    for (var app in _filteredApplications) {
+      if (!applicationsByProgram.containsKey(app.programId)) {
+        applicationsByProgram[app.programId] = [];
+      }
+      applicationsByProgram[app.programId]!.add(app);
+    }
+
     return ListView.builder(
       padding: EdgeInsets.all(16),
-      itemCount: _filteredApplications.length,
-      itemBuilder: (context, index) => _buildApplicationCard(_filteredApplications[index], isWeb),
+      itemCount: _filteredPrograms.length,
+      itemBuilder: (context, index) {
+        final program = _filteredPrograms[index];
+        final programApplications = applicationsByProgram[program.id] ?? [];
+        final isExpanded = _expandedProgramId == program.id;
+        
+        return _buildProgramCard(program, programApplications, isExpanded, isWeb);
+      },
     );
   }
 
-  Widget _buildApplicationCard(Application application, bool isWeb) {
+  Widget _buildProgramCard(ProgramOpportunity program, List<Application> applications, bool isExpanded, bool isWeb) {
+    final pendingCount = applications.where((app) => app.status == ApplicationStatus.pending).length;
+    final totalCount = applications.length;
+    
     return Card(
       elevation: 4,
       margin: EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          // Header del programa
+          InkWell(
+            onTap: () {
+              setState(() {
+                _expandedProgramId = isExpanded ? null : program.id;
+              });
+            },
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          program.title,
+                          style: TextStyle(
+                            fontSize: isWeb ? 18 : 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff2E2F44),
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.people, size: 14, color: Colors.grey[600]),
+                            SizedBox(width: 4),
+                            Text(
+                              '$totalCount postulación${totalCount != 1 ? 'es' : ''}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            if (pendingCount > 0) ...[
+                              SizedBox(width: 12),
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[100],
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$pendingCount pendiente${pendingCount != 1 ? 's' : ''}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.orange[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: Color(0xff6C4DDC),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Contenido expandido con las postulaciones
+          if (isExpanded) ...[
+            Divider(height: 1),
+            if (applications.isEmpty)
+              Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.assignment_outlined, color: Colors.grey[400], size: 48),
+                      SizedBox(height: 8),
+                      Text(
+                        'No hay postulaciones',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              ...applications.map((app) => _buildApplicationCard(app, isWeb, true)).toList(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApplicationCard(Application application, bool isWeb, [bool withMargin = false]) {
+    return Container(
+      margin: withMargin ? EdgeInsets.symmetric(horizontal: 12, vertical: 8) : EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        border: withMargin ? Border(left: BorderSide(color: Color(0xff6C4DDC), width: 3)) : null,
+      ),
+      child: Card(
+        elevation: withMargin ? 2 : 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => _navigateToApplicationDetails(application),
@@ -400,8 +530,16 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _updateApplicationStatus(application, ApplicationStatus.approved),
-                        icon: Icon(Icons.check, size: 16),
+                        onPressed: _processingApplications.contains(application.id)
+                            ? null
+                            : () => _updateApplicationStatus(application, ApplicationStatus.approved),
+                        icon: _processingApplications.contains(application.id)
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(Icons.check, size: 16),
                         label: Text('Aprobar'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.green,
@@ -412,8 +550,16 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
                     SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _updateApplicationStatus(application, ApplicationStatus.rejected),
-                        icon: Icon(Icons.close, size: 16),
+                        onPressed: _processingApplications.contains(application.id)
+                            ? null
+                            : () => _updateApplicationStatus(application, ApplicationStatus.rejected),
+                        icon: _processingApplications.contains(application.id)
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(Icons.close, size: 16),
                         label: Text('Rechazar'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
@@ -425,6 +571,7 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
                 ),
               ],
             ],
+            ),
           ),
         ),
       ),
@@ -441,13 +588,30 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
   }
 
   Future<void> _updateApplicationStatus(Application application, ApplicationStatus newStatus) async {
+    // Verificar si ya se está procesando esta aplicación
+    if (_processingApplications.contains(application.id)) {
+      _showInfoSnackBar('La operación ya está en proceso...');
+      return;
+    }
+
     try {
+      // Agregar a la lista de procesamiento
+      setState(() {
+        _processingApplications.add(application.id);
+      });
+
       String? notes;
       String? rejectionReason;
       
       if (newStatus == ApplicationStatus.rejected) {
         notes = await _showRejectionReasonDialog();
-        if (notes == null) return; // Usuario canceló
+        if (notes == null) {
+          // Usuario canceló, remover del set y salir
+          setState(() {
+            _processingApplications.remove(application.id);
+          });
+          return;
+        }
         rejectionReason = notes;
       }
       
@@ -458,9 +622,18 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
         rejectionReason: rejectionReason,
       );
       
-      _loadApplications();
+      // Remover del set de procesamiento
+      setState(() {
+        _processingApplications.remove(application.id);
+      });
+      
+      _loadData();
       _showSuccessSnackBar('Estado actualizado exitosamente');
     } catch (e) {
+      // Remover del set en caso de error
+      setState(() {
+        _processingApplications.remove(application.id);
+      });
       _showErrorSnackBar('Error al actualizar estado: $e');
     }
   }
@@ -512,6 +685,16 @@ class _ApplicationsManagementScreenState extends State<ApplicationsManagementScr
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  void _showInfoSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 2),
       ),
     );
   }

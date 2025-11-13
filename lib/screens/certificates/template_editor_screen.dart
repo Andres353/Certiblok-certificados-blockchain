@@ -3,7 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/certificate_template_service.dart';
+import '../../services/adapters/certificate_template_adapter.dart';
 import '../../models/certificate_template.dart';
 import 'template_preview_widget.dart';
 
@@ -75,13 +75,13 @@ class _TemplateEditorScreenState extends State<TemplateEditorScreen> {
           updatedAt: DateTime.now(),
         );
 
-        await CertificateTemplateService.updateTemplate(
+        await CertificateTemplateAdapter.updateTemplate(
           _currentTemplate.id,
           updatedTemplate,
         );
       } else {
         // Crear nueva plantilla
-        await CertificateTemplateService.createTemplate(
+        await CertificateTemplateAdapter.createTemplate(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
           design: _currentDesign,
@@ -225,108 +225,37 @@ class _TemplateEditorScreenState extends State<TemplateEditorScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Diseño',
+              'Colores del Certificado',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 16),
             
-            // Colores
-            _buildColorPicker('Color Primario', _currentDesign.primaryColor, (color) {
-              setState(() {
-                _currentDesign = TemplateDesign(
-                  primaryColor: color,
-                  secondaryColor: _currentDesign.secondaryColor,
-                  backgroundColor: _currentDesign.backgroundColor,
-                  textColor: _currentDesign.textColor,
-                  headerBackgroundColor: _currentDesign.headerBackgroundColor,
-                  headerTextColor: _currentDesign.headerTextColor,
-                  borderColor: _currentDesign.borderColor,
-                  borderWidth: _currentDesign.borderWidth,
-                  borderRadius: _currentDesign.borderRadius,
-                  fontFamily: _currentDesign.fontFamily,
-                  titleFontSize: _currentDesign.titleFontSize,
-                  subtitleFontSize: _currentDesign.subtitleFontSize,
-                  bodyFontSize: _currentDesign.bodyFontSize,
-                  smallFontSize: _currentDesign.smallFontSize,
-                  logoUrl: _currentDesign.logoUrl,
-                  backgroundImageUrl: _currentDesign.backgroundImageUrl,
-                  backgroundOpacity: _currentDesign.backgroundOpacity,
-                );
-              });
-            }),
+            // Paleta de colores predefinidos
+            _buildColorPalette(),
+            SizedBox(height: 20),
             
-            _buildColorPicker('Color Secundario', _currentDesign.secondaryColor, (color) {
+            // Colores principales
+            Text(
+              'Colores Principales',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 12),
+            
+            _buildColorPicker('Color Principal', _currentDesign.primaryColor, (color) {
               setState(() {
-                _currentDesign = TemplateDesign(
-                  primaryColor: _currentDesign.primaryColor,
-                  secondaryColor: color,
-                  backgroundColor: _currentDesign.backgroundColor,
-                  textColor: _currentDesign.textColor,
-                  headerBackgroundColor: _currentDesign.headerBackgroundColor,
-                  headerTextColor: _currentDesign.headerTextColor,
-                  borderColor: _currentDesign.borderColor,
-                  borderWidth: _currentDesign.borderWidth,
-                  borderRadius: _currentDesign.borderRadius,
-                  fontFamily: _currentDesign.fontFamily,
-                  titleFontSize: _currentDesign.titleFontSize,
-                  subtitleFontSize: _currentDesign.subtitleFontSize,
-                  bodyFontSize: _currentDesign.bodyFontSize,
-                  smallFontSize: _currentDesign.smallFontSize,
-                  logoUrl: _currentDesign.logoUrl,
-                  backgroundImageUrl: _currentDesign.backgroundImageUrl,
-                  backgroundOpacity: _currentDesign.backgroundOpacity,
-                );
+                _currentDesign = _updateDesign(primaryColor: color);
               });
             }),
             
             _buildColorPicker('Color de Fondo', _currentDesign.backgroundColor, (color) {
               setState(() {
-                _currentDesign = TemplateDesign(
-                  primaryColor: _currentDesign.primaryColor,
-                  secondaryColor: _currentDesign.secondaryColor,
-                  backgroundColor: color,
-                  textColor: _currentDesign.textColor,
-                  headerBackgroundColor: _currentDesign.headerBackgroundColor,
-                  headerTextColor: _currentDesign.headerTextColor,
-                  borderColor: _currentDesign.borderColor,
-                  borderWidth: _currentDesign.borderWidth,
-                  borderRadius: _currentDesign.borderRadius,
-                  fontFamily: _currentDesign.fontFamily,
-                  titleFontSize: _currentDesign.titleFontSize,
-                  subtitleFontSize: _currentDesign.subtitleFontSize,
-                  bodyFontSize: _currentDesign.bodyFontSize,
-                  smallFontSize: _currentDesign.smallFontSize,
-                  logoUrl: _currentDesign.logoUrl,
-                  backgroundImageUrl: _currentDesign.backgroundImageUrl,
-                  backgroundOpacity: _currentDesign.backgroundOpacity,
-                );
+                _currentDesign = _updateDesign(backgroundColor: color);
               });
             }),
             
-            SizedBox(height: 16),
-            
-            // Tamaños de fuente
-            _buildFontSizeSlider('Título', _currentDesign.titleFontSize, (size) {
+            _buildColorPicker('Color del Borde', _currentDesign.borderColor, (color) {
               setState(() {
-                _currentDesign = TemplateDesign(
-                  primaryColor: _currentDesign.primaryColor,
-                  secondaryColor: _currentDesign.secondaryColor,
-                  backgroundColor: _currentDesign.backgroundColor,
-                  textColor: _currentDesign.textColor,
-                  headerBackgroundColor: _currentDesign.headerBackgroundColor,
-                  headerTextColor: _currentDesign.headerTextColor,
-                  borderColor: _currentDesign.borderColor,
-                  borderWidth: _currentDesign.borderWidth,
-                  borderRadius: _currentDesign.borderRadius,
-                  fontFamily: _currentDesign.fontFamily,
-                  titleFontSize: size,
-                  subtitleFontSize: _currentDesign.subtitleFontSize,
-                  bodyFontSize: _currentDesign.bodyFontSize,
-                  smallFontSize: _currentDesign.smallFontSize,
-                  logoUrl: _currentDesign.logoUrl,
-                  backgroundImageUrl: _currentDesign.backgroundImageUrl,
-                  backgroundOpacity: _currentDesign.backgroundOpacity,
-                );
+                _currentDesign = _updateDesign(borderColor: color);
               });
             }),
           ],
@@ -516,53 +445,148 @@ class _TemplateEditorScreenState extends State<TemplateEditorScreen> {
   Widget _buildColorPicker(String label, String currentColor, Function(String) onChanged) {
     return Padding(
       padding: EdgeInsets.only(bottom: 16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$label: '),
-          SizedBox(width: 8),
-          Container(
-            width: 30,
-            height: 30,
+          Text(
+            label,
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
+          SizedBox(height: 8),
+          Row(
+            children: [
+              // Muestra del color actual
+              GestureDetector(
+                onTap: () => _showColorPicker(currentColor, onChanged),
+                child: Container(
+                  width: 40,
+                  height: 40,
             decoration: BoxDecoration(
               color: _parseColor(currentColor),
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          SizedBox(width: 8),
+                    border: Border.all(color: Colors.grey[400]!, width: 2),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.color_lens,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+              SizedBox(width: 12),
+              // Campo de texto para color personalizado
           Expanded(
             child: TextFormField(
               initialValue: currentColor,
               decoration: InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    labelText: 'Código de color',
+                    hintText: '#6C4DDC',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    prefixIcon: Icon(Icons.palette, size: 20),
               ),
               onChanged: onChanged,
-            ),
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty) {
+                      if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) {
+                        return 'Formato inválido (ej: #6C4DDC)';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFontSizeSlider(String label, double value, Function(double) onChanged) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('$label: ${value.toInt()}px'),
-          Slider(
-            value: value,
-            min: 8,
-            max: 72,
-            divisions: 64,
-            onChanged: onChanged,
+  // Selector de colores visual
+  void _showColorPicker(String currentColor, Function(String) onChanged) {
+    final predefinedColors = [
+      '#6C4DDC', '#4A90E2', '#50C878', '#F39C12', '#E74C3C',
+      '#2C3E50', '#34495E', '#7F8C8D', '#95A5A6', '#BDC3C7',
+      '#8E44AD', '#9B59B6', '#E67E22', '#D35400', '#C0392B',
+      '#1ABC9C', '#16A085', '#27AE60', '#2ECC71', '#58D68D',
+      '#3498DB', '#2980B9', '#5DADE2', '#85C1E9', '#AED6F1',
+      '#F1C40F', '#F4D03F', '#F7DC6F', '#F9E79F', '#FCF3CF',
+      '#E74C3C', '#C0392B', '#F1948A', '#F5B7B1', '#FADBD8',
+      '#000000', '#2C3E50', '#34495E', '#7F8C8D', '#95A5A6',
+      '#FFFFFF', '#F8F9FA', '#E9ECEF', '#DEE2E6', '#CED4DA',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Seleccionar Color'),
+        content: Container(
+          width: 300,
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 6,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: predefinedColors.length,
+            itemBuilder: (context, index) {
+              final color = predefinedColors[index];
+              final isSelected = color == currentColor;
+              
+              return GestureDetector(
+                onTap: () {
+                  onChanged(color);
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _parseColor(color),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isSelected ? Colors.black : Colors.grey[300]!,
+                      width: isSelected ? 3 : 1,
+                    ),
+                    boxShadow: isSelected ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: Offset(0, 4),
+                      ),
+                    ] : null,
+                  ),
+                  child: isSelected
+                      ? Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 20,
+                        )
+                      : null,
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
           ),
         ],
       ),
     );
   }
+
 
   Widget _buildPreviewPanel() {
     return Container(
@@ -676,9 +700,217 @@ class _TemplateEditorScreenState extends State<TemplateEditorScreen> {
   }
 
   void _editField(int index) {
-    // TODO: Implementar diálogo para editar campo
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Funcionalidad de editar campo en desarrollo')),
+    final field = _currentFields[index];
+    final TextEditingController valueController = TextEditingController(text: field.value);
+    final TextEditingController colorController = TextEditingController(text: field.style.color);
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Editar Contenido'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Información del campo
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.text_fields, color: Color(0xff6C4DDC)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          field.label,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xff2E2F44),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 20),
+                
+                // Contenido del texto
+                TextFormField(
+                  controller: valueController,
+                  decoration: InputDecoration(
+                    labelText: 'Contenido del Certificado',
+                    hintText: 'Ingresa el texto que aparecerá en el certificado',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    prefixIcon: Icon(Icons.edit),
+                  ),
+                  maxLines: 4,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El contenido no puede estar vacío';
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 20),
+                
+                // Color del texto
+                Text(
+                  'Color del Texto',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xff2E2F44),
+                  ),
+                ),
+                SizedBox(height: 12),
+                
+                Row(
+                  children: [
+                    // Muestra del color actual
+                    GestureDetector(
+                      onTap: () => _showColorPicker(field.style.color, (color) {
+                        colorController.text = color;
+                        setDialogState(() {});
+                      }),
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: _parseColor(field.style.color),
+                          border: Border.all(color: Colors.grey[400]!, width: 2),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.color_lens,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    // Campo de texto para color personalizado
+                    Expanded(
+                      child: TextFormField(
+                        controller: colorController,
+                        decoration: InputDecoration(
+                          labelText: 'Código de color',
+                          hintText: '#6C4DDC',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          prefixIcon: Icon(Icons.palette, size: 20),
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() {});
+                        },
+                        validator: (value) {
+                          if (value != null && value.isNotEmpty) {
+                            if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) {
+                              return 'Formato inválido (ej: #6C4DDC)';
+                            }
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                
+                // Paleta de colores rápidos
+                Text(
+                  'Colores Rápidos',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    '#6C4DDC', '#2C3E50', '#E74C3C', '#27AE60', '#F39C12',
+                    '#8E44AD', '#1ABC9C', '#34495E', '#E67E22', '#000000'
+                  ].map((color) => GestureDetector(
+                    onTap: () {
+                      colorController.text = color;
+                      setDialogState(() {});
+                    },
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: _parseColor(color),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: colorController.text == color 
+                              ? Colors.black 
+                              : Colors.grey[300]!,
+                          width: colorController.text == color ? 2 : 1,
+                        ),
+                      ),
+                      child: colorController.text == color
+                          ? Icon(Icons.check, color: Colors.white, size: 16)
+                          : null,
+                    ),
+                  )).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (valueController.text.trim().isNotEmpty) {
+                  setState(() {
+                    _currentFields[index] = TemplateField(
+                      id: field.id,
+                      type: field.type,
+                      label: field.label,
+                      value: valueController.text.trim(),
+                      position: field.position,
+                      style: FieldStyle(
+                        fontSize: field.style.fontSize,
+                        fontWeight: field.style.fontWeight,
+                        color: colorController.text.trim(),
+                        textAlign: field.style.textAlign,
+                        isBold: field.style.isBold,
+                      ),
+                      order: field.order,
+                    );
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xff6C4DDC),
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Guardar Cambios'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -686,6 +918,135 @@ class _TemplateEditorScreenState extends State<TemplateEditorScreen> {
     setState(() {
       _currentFields.removeAt(index);
     });
+  }
+
+  // Función auxiliar para actualizar el diseño
+  TemplateDesign _updateDesign({
+    String? primaryColor,
+    String? secondaryColor,
+    String? backgroundColor,
+    String? textColor,
+    String? headerBackgroundColor,
+    String? headerTextColor,
+    String? borderColor,
+    double? borderWidth,
+    double? borderRadius,
+    String? fontFamily,
+    double? titleFontSize,
+    double? subtitleFontSize,
+    double? bodyFontSize,
+    double? smallFontSize,
+    String? logoUrl,
+    String? backgroundImageUrl,
+    double? backgroundOpacity,
+  }) {
+    return TemplateDesign(
+      primaryColor: primaryColor ?? _currentDesign.primaryColor,
+      secondaryColor: secondaryColor ?? _currentDesign.secondaryColor,
+      backgroundColor: backgroundColor ?? _currentDesign.backgroundColor,
+      textColor: textColor ?? _currentDesign.textColor,
+      headerBackgroundColor: headerBackgroundColor ?? _currentDesign.headerBackgroundColor,
+      headerTextColor: headerTextColor ?? _currentDesign.headerTextColor,
+      borderColor: borderColor ?? _currentDesign.borderColor,
+      borderWidth: borderWidth ?? _currentDesign.borderWidth,
+      borderRadius: borderRadius ?? _currentDesign.borderRadius,
+      fontFamily: fontFamily ?? _currentDesign.fontFamily,
+      titleFontSize: titleFontSize ?? _currentDesign.titleFontSize,
+      subtitleFontSize: subtitleFontSize ?? _currentDesign.subtitleFontSize,
+      bodyFontSize: bodyFontSize ?? _currentDesign.bodyFontSize,
+      smallFontSize: smallFontSize ?? _currentDesign.smallFontSize,
+      logoUrl: logoUrl ?? _currentDesign.logoUrl,
+      backgroundImageUrl: backgroundImageUrl ?? _currentDesign.backgroundImageUrl,
+      backgroundOpacity: backgroundOpacity ?? _currentDesign.backgroundOpacity,
+    );
+  }
+
+  // Paleta de colores predefinidos
+  Widget _buildColorPalette() {
+    final colorPalettes = <Map<String, dynamic>>[
+      {
+        'name': 'Clásico',
+        'colors': ['#6C4DDC', '#4A90E2', '#50C878', '#F5F5F5', '#2E2F44'],
+      },
+      {
+        'name': 'Profesional',
+        'colors': ['#2C3E50', '#3498DB', '#E74C3C', '#FFFFFF', '#34495E'],
+      },
+      {
+        'name': 'Elegante',
+        'colors': ['#8E44AD', '#9B59B6', '#E67E22', '#F8F9FA', '#2C3E50'],
+      },
+      {
+        'name': 'Moderno',
+        'colors': ['#1ABC9C', '#16A085', '#F39C12', '#ECF0F1', '#2C3E50'],
+      },
+      {
+        'name': 'Minimalista',
+        'colors': ['#34495E', '#7F8C8D', '#95A5A6', '#FFFFFF', '#2C3E50'],
+      },
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Paletas de Colores',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: colorPalettes.map((palette) {
+            final colors = palette['colors'] as List<String>;
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _currentDesign = _updateDesign(
+                    primaryColor: colors[0],
+                    secondaryColor: colors[1],
+                    backgroundColor: colors[3],
+                    textColor: colors[4],
+                    borderColor: colors[2],
+                  );
+                });
+              },
+              child: Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      palette['name'] as String,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                    SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: colors.map((color) {
+                        return Container(
+                          width: 20,
+                          height: 20,
+                          margin: EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: _parseColor(color),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 
   List<TemplateField> _getDefaultFields() {

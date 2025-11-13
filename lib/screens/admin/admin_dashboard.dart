@@ -1,6 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/user_context_service.dart';
+import '../../services/institution_status_service.dart';
+import '../../widgets/suspended_institution_widget.dart';
+import 'admin_emit_certificate_screen.dart';
+import 'admin_bulk_emit_certificates_screen.dart';
+import 'all_certificates_screen.dart';
+import 'system_reports_screen.dart';
+import 'manage_students_screen.dart';
+import '../certificates/basic_template_editor_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   @override
@@ -20,6 +28,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Future<void> _loadUserContext() async {
     try {
       final context = await UserContextService.loadUserContext();
+      
+      // Verificar si la institución está suspendida
+      if (context?.institutionId != null) {
+        final isSuspended = await InstitutionStatusService.isInstitutionSuspended(context!.institutionId!);
+        if (isSuspended) {
+          setState(() {
+            _userContext = context;
+            _isLoading = false;
+          });
+          return; // Mostrar pantalla de suspensión
+        }
+      }
+      
       setState(() {
         _userContext = context;
         _isLoading = false;
@@ -53,7 +74,55 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
       );
     }
+
+    // Verificar si la institución está suspendida
+    if (_userContext?.institutionId != null) {
+      return FutureBuilder<bool>(
+        future: InstitutionStatusService.isInstitutionSuspended(_userContext!.institutionId!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('Verificando...'),
+                backgroundColor: Color(0xff6C4DDC),
+                foregroundColor: Colors.white,
+              ),
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          
+            if (snapshot.hasData && snapshot.data == true) {
+              return FutureBuilder(
+                future: InstitutionStatusService.getSuspendedInstitutionInfo(_userContext!.institutionId!),
+                builder: (context, institutionSnapshot) {
+                  if (institutionSnapshot.hasData && institutionSnapshot.data != null) {
+                    return SuspendedInstitutionWidget(
+                      institution: institutionSnapshot.data!,
+                      userRole: 'admin',
+                    );
+                  }
+                  return Scaffold(
+                    appBar: AppBar(
+                      title: Text('Error'),
+                      backgroundColor: Color(0xff6C4DDC),
+                      foregroundColor: Colors.white,
+                    ),
+                    body: Center(child: Text('Error al cargar información de la institución')),
+                  );
+                },
+              );
+            }
+          
+          // Si no está suspendida, mostrar el dashboard normal
+          return _buildNormalDashboard(context, isWeb);
+        },
+      );
+    }
     
+    return _buildNormalDashboard(context, isWeb);
+  }
+
+  Widget _buildNormalDashboard(BuildContext context, bool isWeb) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Administrador - Dashboard'),
@@ -208,6 +277,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 _buildFunctionalityCard(
                   context,
+                  'Gestionar Estudiantes',
+                  Icons.people,
+                  'Ver estudiantes de la institución por carrera',
+                  () => _navigateToManageStudents(context),
+                  color: Colors.teal,
+                  isWeb: true,
+                ),
+                _buildFunctionalityCard(
+                  context,
                   'Carreras',
                   Icons.school,
                   'Administrar carreras académicas',
@@ -226,11 +304,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 _buildFunctionalityCard(
                   context,
-                  'Configuración del Sistema',
-                  Icons.settings,
-                  'Configurar parámetros del sistema',
-                  () => _showComingSoon(context, 'Configuración'),
-                  color: Colors.grey,
+                  'Emitir Certificado',
+                  Icons.add_circle,
+                  'Emitir certificados a estudiantes de cualquier carrera',
+                  () => _showEmitCertificateOptions(context),
+                  color: Colors.green,
+                  isWeb: true,
+                ),
+                _buildFunctionalityCard(
+                  context,
+                  'Creación de Plantilla',
+                  Icons.design_services,
+                  'Crear y gestionar plantillas de certificados',
+                  () => _navigateToTemplateManagement(context),
+                  color: Colors.purple,
                   isWeb: true,
                 ),
                 _buildFunctionalityCard(
@@ -238,8 +325,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Ver Todos los Certificados',
                   Icons.description,
                   'Acceso completo a todos los certificados',
-                  () => _showComingSoon(context, 'Ver Certificados'),
-                  color: Colors.green,
+                  () => _navigateToAllCertificates(context),
+                  color: Colors.teal,
                   isWeb: true,
                 ),
                 _buildFunctionalityCard(
@@ -247,17 +334,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Reportes del Sistema',
                   Icons.analytics,
                   'Generar reportes completos del sistema',
-                  () => _showComingSoon(context, 'Reportes'),
+                  () => _navigateToSystemReports(context),
                   color: Colors.orange,
-                  isWeb: true,
-                ),
-                _buildFunctionalityCard(
-                  context,
-                  'Gestión de Usuarios',
-                  Icons.people,
-                  'Administrar todos los usuarios del sistema',
-                  () => _showComingSoon(context, 'Gestión de Usuarios'),
-                  color: Colors.purple,
                   isWeb: true,
                 ),
               ],
@@ -390,11 +468,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 _buildFunctionalityCard(
                   context,
+                  'Gestionar Estudiantes',
+                  Icons.people,
+                  'Ver estudiantes por carrera',
+                  () => _navigateToManageStudents(context),
+                  color: Colors.teal,
+                  isWeb: false,
+                ),
+                _buildFunctionalityCard(
+                  context,
                   'Carreras',
                   Icons.school,
                   'Administrar carreras',
                   () => _navigateToFacultiesPrograms(context),
                   color: Colors.blue,
+                  isWeb: false,
+                ),
+                _buildFunctionalityCard(
+                  context,
+                  'Emitir Certificado',
+                  Icons.add_circle,
+                  'Emitir certificados',
+                  () => _showEmitCertificateOptions(context),
+                  color: Colors.green,
+                  isWeb: false,
+                ),
+                _buildFunctionalityCard(
+                  context,
+                  'Creación de Plantilla',
+                  Icons.design_services,
+                  'Crear y gestionar plantillas',
+                  () => _navigateToTemplateManagement(context),
+                  color: Colors.purple,
                   isWeb: false,
                 ),
                 _buildFunctionalityCard(
@@ -408,19 +513,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 _buildFunctionalityCard(
                   context,
-                  'Configuración del Sistema',
-                  Icons.settings,
-                  'Configurar parámetros del sistema',
-                  () => _showComingSoon(context, 'Configuración'),
-                  color: Colors.grey,
-                  isWeb: false,
-                ),
-                _buildFunctionalityCard(
-                  context,
                   'Ver Todos los Certificados',
                   Icons.description,
                   'Acceso completo a todos los certificados',
-                  () => _showComingSoon(context, 'Ver Certificados'),
+                  () => _navigateToAllCertificates(context),
                   color: Colors.green,
                   isWeb: false,
                 ),
@@ -429,17 +525,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Reportes del Sistema',
                   Icons.analytics,
                   'Generar reportes completos del sistema',
-                  () => _showComingSoon(context, 'Reportes'),
+                  () => _navigateToSystemReports(context),
                   color: Colors.orange,
-                  isWeb: false,
-                ),
-                _buildFunctionalityCard(
-                  context,
-                  'Gestión de Usuarios',
-                  Icons.people,
-                  'Administrar todos los usuarios del sistema',
-                  () => _showComingSoon(context, 'Gestión de Usuarios'),
-                  color: Colors.purple,
                   isWeb: false,
                 ),
               ],
@@ -512,17 +599,148 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
   
-  void _showComingSoon(BuildContext context, String feature) {
+  void _navigateToManageEmisores(BuildContext context) {
+    Navigator.of(context).pushNamed('/manage_emisores');
+  }
+
+  void _navigateToFacultiesPrograms(BuildContext context) {
+    Navigator.of(context).pushNamed('/faculties_programs');
+  }
+
+  void _navigateToManageStudents(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ManageStudentsScreen(),
+      ),
+    );
+  }
+
+  void _showEmitCertificateOptions(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Funcionalidad en Desarrollo'),
-          content: Text('La funcionalidad "$feature" estará disponible próximamente.'),
+          title: Row(
+            children: [
+              Icon(Icons.add_circle, color: Color(0xff6C4DDC), size: 28),
+              SizedBox(width: 12),
+              Text('Emitir Certificado'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Selecciona el tipo de emisión:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 20),
+              
+              // Opción 1: Emisión Individual
+              Container(
+                margin: EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xff6C4DDC), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _navigateToEmitCertificate(context);
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_add, color: Color(0xff6C4DDC), size: 32),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Emisión Individual',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff2E2F44),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Emitir un certificado a un estudiante',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Color(0xff6C4DDC), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Opción 2: Emisión Masiva
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xff6C4DDC), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _navigateToBulkEmitCertificates(context);
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.send, color: Color(0xff6C4DDC), size: 32),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Emisión Masiva',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff2E2F44),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Emitir múltiples certificados a la vez',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Color(0xff6C4DDC), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text('Entendido'),
+              child: Text('Cancelar', style: TextStyle(color: Colors.grey[600])),
             ),
           ],
         );
@@ -530,12 +748,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  void _navigateToManageEmisores(BuildContext context) {
-    Navigator.of(context).pushNamed('/manage_emisores');
+  void _navigateToEmitCertificate(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdminEmitCertificateScreen(),
+      ),
+    );
   }
 
-  void _navigateToFacultiesPrograms(BuildContext context) {
-    Navigator.of(context).pushNamed('/faculties_programs');
+  void _navigateToBulkEmitCertificates(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdminBulkEmitCertificatesScreen(),
+      ),
+    );
+  }
+
+  void _navigateToTemplateManagement(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BasicTemplateEditorScreen(),
+      ),
+    );
   }
 
   void _navigateToProgramsManagement(BuildContext context) {
@@ -1019,6 +1256,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
         content: Text('Código copiado al portapapeles: $code'),
         backgroundColor: Colors.green,
         duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _navigateToAllCertificates(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AllCertificatesScreen(),
+      ),
+    );
+  }
+
+  void _navigateToSystemReports(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SystemReportsScreen(),
       ),
     );
   }

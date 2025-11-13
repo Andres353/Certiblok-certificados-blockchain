@@ -30,6 +30,29 @@ class CertificateTemplate {
     required this.fields,
   });
 
+  // Constructor desde Supabase
+  factory CertificateTemplate.fromSupabase(Map<String, dynamic> data) {
+    return CertificateTemplate(
+      id: data['id'] ?? '',
+      name: data['name'] ?? '',
+      description: data['description'] ?? '',
+      institutionId: data['institution_id'] ?? '',
+      isDefault: data['is_active'] ?? false,
+      createdAt: data['created_at'] != null 
+          ? DateTime.parse(data['created_at'])
+          : DateTime.now(),
+      updatedAt: data['updated_at'] != null 
+          ? DateTime.parse(data['updated_at'])
+          : DateTime.now(),
+      createdBy: data['created_by'] ?? '',
+      design: TemplateDesign.fromMap(data['template_design'] ?? {}),
+      layout: TemplateLayout.fromMap(data['template_layout'] ?? {}),
+      fields: (data['template_fields'] as List<dynamic>?)
+          ?.map((field) => TemplateField.fromMap(field))
+          .toList() ?? [],
+    );
+  }
+
   factory CertificateTemplate.fromMap(Map<String, dynamic> data, String id) {
     return CertificateTemplate(
       id: id,

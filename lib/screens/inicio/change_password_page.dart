@@ -2,8 +2,8 @@
 // Pantalla para cambio obligatorio de contraseña temporal
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:bcrypt/bcrypt.dart';
 import '../../services/user_context_service.dart';
 import '../admin/super_admin_dashboard.dart';
 import '../admin/admin_dashboard.dart';
@@ -68,111 +68,94 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       print('   UID: ${currentContext.userId}');
       print('   InstitutionId: ${currentContext.institutionId}');
 
-      // Verificar si es un usuario de Firebase Auth o de Firestore
-      final user = FirebaseAuth.instance.currentUser;
-      
-      if (user != null && currentContext.userRole != 'emisor' && currentContext.userRole != 'student') {
-        // Usuario de Firebase Auth (admin, super_admin)
-        print('   🔐 Cambiando contraseña para usuario Firebase Auth...');
+      final supabase = Supabase.instance.client;
+      final currentPassword = _currentPasswordController.text.trim();
+      final newPassword = _newPasswordController.text.trim();
+
+      // Hash de la nueva contraseña
+      final hashedNewPassword = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+
+      if (currentContext.userRole == 'admin_institution') {
+        // Admin de institución - buscar en tabla institutions
+        print('   🔐 Cambiando contraseña para admin de institución...');
         
+        final institutionResponse = await supabase
+            .from('institutions')
+            .select('*')
+            .eq('id', currentContext.institutionId ?? currentContext.userId)
+            .single();
+
         // Verificar contraseña actual
-        final credential = EmailAuthProvider.credential(
-          email: user.email!,
-          password: _currentPasswordController.text.trim(),
-        );
-        
-        print('   Verificando contraseña actual...');
-        await user.reauthenticateWithCredential(credential);
-        print('   ✅ Contraseña actual verificada');
+        final storedPassword = institutionResponse['admin_password_hash'] ?? '';
+        bool passwordMatches = false;
 
-        // Cambiar contraseña
-        print('   Cambiando contraseña...');
-        await user.updatePassword(_newPasswordController.text.trim());
-        print('   ✅ Contraseña cambiada exitosamente');
-
-        // Actualizar estado en Firestore
-        print('   Actualizando estado en Firestore...');
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({
-          'mustChangePassword': false,
-          'isTemporaryPassword': false,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-        print('   ✅ Estado actualizado en Firestore');
-        
-      } else {
-        // Usuario de Firestore (emisor, student, admin_institution)
-        print('   🔐 Cambiando contraseña para usuario Firestore...');
-        
-        DocumentReference docRef;
-        
-        // Determinar la colección según el rol
-        if (currentContext.userRole == 'admin_institution') {
-          // Admin de institución está en la colección 'institutions'
-          // Usar institutionId como el ID del documento
-          final docId = currentContext.institutionId ?? currentContext.userId;
-          print('   📍 Buscando en institutions con ID: $docId');
-          docRef = FirebaseFirestore.instance
-              .collection('institutions')
-              .doc(docId);
-        } else {
-          // Otros usuarios (emisor, student) están en 'users'
-          print('   📍 Buscando en users con ID: ${currentContext.userId}');
-          docRef = FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentContext.userId);
-        }
-        
-        final doc = await docRef.get();
-        print('   📄 Documento existe: ${doc.exists}');
-        if (!doc.exists) {
-          print('   ❌ Documento no encontrado en Firestore');
-          print('   🔍 Colección: ${currentContext.userRole == 'admin_institution' ? 'institutions' : 'users'}');
-          if (currentContext.userRole == 'admin_institution') {
-            print('   🔍 ID del documento: ${currentContext.institutionId ?? currentContext.userId}');
-          } else {
-            print('   🔍 ID del documento: ${currentContext.userId}');
+        if (storedPassword.startsWith('\$2') && storedPassword.length >= 28) {
+          try {
+            passwordMatches = BCrypt.checkpw(currentPassword, storedPassword);
+          } catch (e) {
+            passwordMatches = currentPassword == storedPassword;
           }
-          throw Exception('Usuario no encontrado en Firestore');
+        } else {
+          passwordMatches = currentPassword == storedPassword;
         }
-        
-        final userData = doc.data()! as Map<String, dynamic>;
-        final currentPassword = userData['password'] as String? ?? userData['adminPassword'] as String?;
-        
-        print('   🔍 Contraseña almacenada: ${currentPassword ?? "null"}');
-        print('   🔍 Contraseña ingresada: ${_currentPasswordController.text.trim()}');
-        print('   🔍 Campos disponibles: ${userData.keys.toList()}');
-        
-        if (currentPassword != _currentPasswordController.text.trim()) {
+
+        if (!passwordMatches) {
           throw Exception('La contraseña actual es incorrecta');
         }
-        
-        print('   ✅ Contraseña actual verificada');
 
-        // Actualizar contraseña en Firestore
-        print('   Cambiando contraseña en Firestore...');
+        // Actualizar contraseña en Supabase
+        await supabase
+            .from('institutions')
+            .update({
+              'admin_password_hash': hashedNewPassword,
+              'admin_must_change_password': false,
+              'admin_is_temporary_password': false,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', currentContext.institutionId ?? currentContext.userId);
+
+        print('   ✅ Contraseña de admin de institución cambiada exitosamente');
+
+      } else {
+        // Otros usuarios - buscar en tabla users
+        print('   🔐 Cambiando contraseña para usuario...');
         
-        if (currentContext.userRole == 'admin_institution') {
-          // Para admin de institución, actualizar adminPassword
-          await docRef.update({
-            'adminPassword': _newPasswordController.text.trim(),
-            'adminMustChangePassword': false,
-            'adminIsTemporaryPassword': false,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+        final userResponse = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', currentContext.userId)
+            .single();
+
+        // Verificar contraseña actual
+        final storedPassword = userResponse['password_hash'] ?? '';
+        bool passwordMatches = false;
+
+        if (storedPassword.startsWith('\$2') && storedPassword.length >= 28) {
+          try {
+            passwordMatches = BCrypt.checkpw(currentPassword, storedPassword);
+          } catch (e) {
+            passwordMatches = currentPassword == storedPassword;
+          }
         } else {
-          // Para otros usuarios, actualizar password
-          await docRef.update({
-            'password': _newPasswordController.text.trim(),
-            'mustChangePassword': false,
-            'isTemporaryPassword': false,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          passwordMatches = currentPassword == storedPassword;
         }
-        
-        print('   ✅ Contraseña cambiada exitosamente en Firestore');
+
+        if (!passwordMatches) {
+          throw Exception('La contraseña actual es incorrecta');
+        }
+
+        // Actualizar contraseña en Supabase
+        await supabase
+            .from('users')
+            .update({
+              'password_hash': hashedNewPassword,
+              'must_change_password': false,
+              'is_temporary_password': false,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', currentContext.userId);
+
+        print('   ✅ Contraseña de usuario cambiada exitosamente');
       }
 
       // Actualizar contexto de usuario

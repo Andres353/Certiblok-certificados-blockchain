@@ -25,6 +25,7 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   List<String> _selectedCertificates = [];
   String? _cvFilePath;
   String? _cvFileName;
+  Uint8List? _cvFileBytes; // Bytes del CV para web
   String? _motivationPdfData; // Base64 del PDF de carta de motivación
   String? _motivationPdfFileName;
   bool _isUploadingMotivationPdf = false;
@@ -67,17 +68,31 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
         allowedExtensions: ['pdf', 'doc', 'docx'],
         allowMultiple: false,
         allowCompression: true,
+        withData: true, // Cargar bytes para web
       );
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         print('📄 Archivo seleccionado: ${file.name}');
         print('📊 Tamaño: ${file.size} bytes');
-        print('📁 Ruta: ${file.path}');
+        
+        // Manejar path de forma segura para web
+        String? filePath;
+        try {
+          // Intentar acceder al path
+          final path = file.path;
+          if (path != null && path.isNotEmpty) {
+            filePath = path;
+          }
+        } catch (e) {
+          // En web, path no está disponible, esto es normal
+          print('ℹ️ Path no disponible (web), usando bytes en su lugar');
+        }
         
         setState(() {
-          _cvFilePath = file.path;
+          _cvFilePath = filePath;
           _cvFileName = file.name;
+          _cvFileBytes = file.bytes; // Importante para web
         });
         
         _showInfoSnackBar('CV seleccionado exitosamente');
@@ -142,7 +157,7 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
       return;
     }
 
-    if (_cvFilePath == null) {
+    if (_cvFileBytes == null && _cvFilePath == null) {
       _showErrorSnackBar('Debes cargar tu CV');
       return;
     }
@@ -152,18 +167,16 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
       return;
     }
 
-    if (_selectedCertificates.isEmpty) {
-      _showErrorSnackBar('Debes seleccionar al menos un certificado');
-      return;
-    }
+    // Los certificados son opcionales, no validar
 
     setState(() => _isSubmitting = true);
 
     try {
       await ApplicationService.createApplication(
         programId: widget.program.id,
-        cvFilePath: _cvFilePath!,
+        cvFilePath: _cvFilePath,
         cvFileName: _cvFileName!,
+        cvFileBytes: _cvFileBytes, // Agregar bytes para web
         selectedCertificates: _selectedCertificates,
         motivationLetter: _motivationController.text,
         motivationPdfData: _motivationPdfData,
@@ -223,44 +236,65 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Postularse a ${widget.program.title}'),
+        title: Text('Postularse a Pasantía'),
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
+            ),
+          ),
+        ),
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Padding(
-                padding: EdgeInsets.all(isWeb ? 24 : 16),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Información del programa
-                      _buildProgramInfo(isWeb),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Carga de CV
-                      _buildCVSection(isWeb),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Selección de certificados
-                      _buildCertificatesSection(isWeb),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Carta de motivación
-                      _buildMotivationSection(isWeb),
-                      
-                      SizedBox(height: 32),
-                      
-                      // Botón de envío
-                      _buildSubmitButton(isWeb),
-                    ],
+          : Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.grey[50]!,
+                    Colors.white,
+                  ],
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: EdgeInsets.all(isWeb ? 24 : 16),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Información del programa
+                        _buildProgramInfo(isWeb),
+                        
+                        SizedBox(height: 24),
+                        
+                        // Carga de CV
+                        _buildCVSection(isWeb),
+                        
+                        SizedBox(height: 24),
+                        
+                        // Selección de certificados
+                        _buildCertificatesSection(isWeb),
+                        
+                        SizedBox(height: 24),
+                        
+                        // Carta de motivación
+                        _buildMotivationSection(isWeb),
+                        
+                        SizedBox(height: 32),
+                        
+                        // Botón de envío
+                        _buildSubmitButton(isWeb),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -269,170 +303,120 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   }
 
   Widget _buildProgramInfo(bool isWeb) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(isWeb ? 20 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Información del Programa',
-              style: TextStyle(
-                fontSize: isWeb ? 20 : 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xff2E2F44),
-              ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              widget.program.title,
-              style: TextStyle(
-                fontSize: isWeb ? 18 : 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xff6C4DDC),
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              widget.program.institutionName,
-              style: TextStyle(
-                fontSize: isWeb ? 16 : 14,
-                color: Colors.grey[600],
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              '${widget.program.careerNames.join(', ')}',
-              style: TextStyle(
-                fontSize: isWeb ? 14 : 12,
-                color: Colors.grey[500],
-              ),
-            ),
-          ],
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
         ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xff6C4DDC).withOpacity(0.3),
+            blurRadius: 15,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildCVSection(bool isWeb) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: EdgeInsets.all(isWeb ? 20 : 16),
+        padding: EdgeInsets.all(isWeb ? 24 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Curriculum Vitae *',
-              style: TextStyle(
-                fontSize: isWeb ? 18 : 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xff2E2F44),
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.work_outline, color: Colors.white, size: 28),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Información del Programa',
+                        style: TextStyle(
+                          fontSize: isWeb ? 18 : 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        widget.program.title,
+                        style: TextStyle(
+                          fontSize: isWeb ? 22 : 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: 8),
-            Text(
-              'Sube tu CV en formato PDF, DOC o DOCX',
-              style: TextStyle(
-                fontSize: isWeb ? 14 : 12,
-                color: Colors.grey[600],
-              ),
-            ),
-            SizedBox(height: 16),
-            
-            // Sección de subida de CV
+            SizedBox(height: 20),
             Container(
-              width: double.infinity,
               padding: EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.3)),
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_cvFilePath == null) ...[
-                    // Estado sin archivo
-                    Icon(
-                      Icons.description,
-                      size: 48,
-                      color: Colors.grey[400],
-                    ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Ningún archivo seleccionado',
-                      style: TextStyle(
-                        fontSize: isWeb ? 16 : 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Sube tu CV en PDF, DOC o DOCX',
-                      style: TextStyle(
-                        fontSize: isWeb ? 12 : 10,
-                        color: Colors.grey[500],
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _pickCV,
-                      icon: Icon(Icons.upload_file, size: 18),
-                      label: Text('Seleccionar CV'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xff6C4DDC),
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    // Estado con archivo seleccionado
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.description,
-                          color: Colors.green[600],
-                          size: 24,
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _cvFileName ?? 'CV.pdf',
-                                style: TextStyle(
-                                  fontSize: isWeb ? 16 : 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xff2E2F44),
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Archivo seleccionado exitosamente',
-                                style: TextStyle(
-                                  fontSize: isWeb ? 12 : 10,
-                                  color: Colors.green[600],
-                                ),
-                              ),
-                            ],
+                  Row(
+                    children: [
+                      Icon(Icons.school, color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.program.institutionName,
+                          style: TextStyle(
+                            fontSize: isWeb ? 16 : 14,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _cvFilePath = null;
-                              _cvFileName = null;
-                            });
-                          },
-                          icon: Icon(Icons.delete, color: Colors.red[600]),
-                          tooltip: 'Eliminar archivo',
+                      ),
+                    ],
+                  ),
+                  if (widget.program.careerNames.isNotEmpty) ...[
+                    SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.book, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: widget.program.careerNames.map((career) {
+                              return Container(
+                                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  career,
+                                  style: TextStyle(
+                                    fontSize: isWeb ? 13 : 12,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
                         ),
                       ],
                     ),
@@ -446,67 +430,366 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
     );
   }
 
-  Widget _buildCertificatesSection(bool isWeb) {
+  Widget _buildCVSection(bool isWeb) {
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(isWeb ? 20 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Certificados Relevantes *',
-              style: TextStyle(
-                fontSize: isWeb ? 18 : 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xff2E2F44),
+      elevation: 8,
+      shadowColor: Colors.grey.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Colors.grey[50]!],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(isWeb ? 24 : 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.description, color: Color(0xff6C4DDC), size: 24),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Curriculum Vitae *',
+                          style: TextStyle(
+                            fontSize: isWeb ? 20 : 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff2E2F44),
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Sube tu CV en formato PDF, DOC o DOCX',
+                          style: TextStyle(
+                            fontSize: isWeb ? 14 : 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Selecciona los certificados que quieres incluir en tu postulación',
-              style: TextStyle(
-                fontSize: isWeb ? 14 : 12,
-                color: Colors.grey[600],
-              ),
-            ),
-            SizedBox(height: 16),
-            
-            if (_availableCertificates.isEmpty)
+              SizedBox(height: 20),
+              
+              // Sección de subida de CV
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Icon(Icons.info, color: Colors.grey[600], size: 32),
-                    SizedBox(height: 8),
-                    Text(
-                      'No tienes certificados disponibles',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Necesitas tener certificados válidos para postularte',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                      ),
-                      textAlign: TextAlign.center,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: (_cvFilePath == null && _cvFileName == null && _cvFileBytes == null)
+                        ? [Colors.blue[50]!, Colors.blue[100]!]
+                        : [Colors.green[50]!, Colors.green[100]!],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: (_cvFilePath == null && _cvFileName == null && _cvFileBytes == null)
+                        ? Colors.blue[200]!
+                        : Colors.green[300]!,
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: ((_cvFilePath == null && _cvFileName == null && _cvFileBytes == null) ? Colors.blue : Colors.green).withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: Offset(0, 4),
                     ),
                   ],
                 ),
-              )
-            else
-              ..._availableCertificates.map((cert) => _buildCertificateItem(cert, isWeb)).toList(),
-          ],
+                child: Column(
+                  children: [
+                    if (_cvFilePath == null && _cvFileName == null && _cvFileBytes == null) ...[
+                      // Estado sin archivo
+                      Container(
+                        padding: EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.description_outlined,
+                          size: 56,
+                          color: Colors.blue[400],
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Ningún archivo seleccionado',
+                        style: TextStyle(
+                          fontSize: isWeb ? 18 : 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Formatos aceptados: PDF, DOC, DOCX',
+                        style: TextStyle(
+                          fontSize: isWeb ? 14 : 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _pickCV,
+                        icon: Icon(Icons.upload_file, size: 20),
+                        label: Text(
+                          'Seleccionar CV',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xff6C4DDC),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 4,
+                        ),
+                      ),
+                    ] else ...[
+                      // Estado con archivo seleccionado (igual que PDF de motivación)
+                      Container(
+                        padding: EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green[100],
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.check_circle,
+                                color: Colors.green[700],
+                                size: 32,
+                              ),
+                            ),
+                            SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _cvFileName ?? 'CV.pdf',
+                                    style: TextStyle(
+                                      fontSize: isWeb ? 16 : 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xff2E2F44),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.check_circle, color: Colors.green[600], size: 16),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Archivo seleccionado exitosamente',
+                                        style: TextStyle(
+                                          fontSize: isWeb ? 13 : 12,
+                                          color: Colors.green[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _cvFilePath = null;
+                                  _cvFileName = null;
+                                  _cvFileBytes = null;
+                                });
+                              },
+                              icon: Icon(Icons.delete_outline, color: Colors.red[600], size: 24),
+                              tooltip: 'Eliminar archivo',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCertificatesSection(bool isWeb) {
+    return Card(
+      elevation: 8,
+      shadowColor: Colors.grey.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Colors.grey[50]!],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(isWeb ? 24 : 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.verified, color: Color(0xff6C4DDC), size: 24),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Certificados Relevantes (Opcional)',
+                          style: TextStyle(
+                            fontSize: isWeb ? 20 : 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff2E2F44),
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Selecciona los certificados que quieres incluir (opcional)',
+                          style: TextStyle(
+                            fontSize: isWeb ? 14 : 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 20),
+              
+              if (_availableCertificates.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.orange[200]!),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange[600], size: 40),
+                      SizedBox(height: 12),
+                      Text(
+                        'No tienes certificados disponibles',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange[800],
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Necesitas tener certificados válidos para postularte',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.orange[700],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                // Contador de certificados seleccionados
+                if (_selectedCertificates.isNotEmpty)
+                  Container(
+                    margin: EdgeInsets.only(bottom: 16),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green[600], size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          '${_selectedCertificates.length} certificado${_selectedCertificates.length > 1 ? 's' : ''} seleccionado${_selectedCertificates.length > 1 ? 's' : ''}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                // Contenedor con altura máxima y scrollbar
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: 350, // Altura máxima
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.all(8),
+                      child: Column(
+                        children: _availableCertificates
+                            .map((cert) => _buildCertificateItem(cert, isWeb))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -516,7 +799,22 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
     final isSelected = _selectedCertificates.contains(cert['id']);
     
     return Container(
-      margin: EdgeInsets.only(bottom: 8),
+      margin: EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: isSelected ? Color(0xff6C4DDC).withOpacity(0.1) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected ? Color(0xff6C4DDC) : Colors.grey[300]!,
+          width: isSelected ? 2 : 1,
+        ),
+        boxShadow: isSelected ? [
+          BoxShadow(
+            color: Color(0xff6C4DDC).withOpacity(0.2),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ] : null,
+      ),
       child: CheckboxListTile(
         value: isSelected,
         onChanged: (value) {
@@ -528,190 +826,322 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
             }
           });
         },
-        title: Text(
-          cert['title'] ?? 'Certificado',
-          style: TextStyle(
-            fontSize: isWeb ? 14 : 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        subtitle: Text(
-          '${cert['type'] ?? 'Tipo'} - ${cert['institutionName'] ?? 'Institución'}',
-          style: TextStyle(
-            fontSize: isWeb ? 12 : 11,
-            color: Colors.grey[600],
-          ),
-        ),
         activeColor: Color(0xff6C4DDC),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isSelected ? Color(0xff6C4DDC) : Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.verified,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                cert['title'] ?? 'Certificado',
+                style: TextStyle(
+                  fontSize: isWeb ? 15 : 14,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Color(0xff6C4DDC) : Color(0xff2E2F44),
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: EdgeInsets.only(left: 42, top: 4),
+          child: Text(
+            '${cert['type'] ?? 'Tipo'} - ${cert['institutionName'] ?? 'Institución'}',
+            style: TextStyle(
+              fontSize: isWeb ? 13 : 12,
+              color: Colors.grey[600],
+            ),
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildMotivationSection(bool isWeb) {
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(isWeb ? 20 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Carta de Motivación (PDF) *',
-              style: TextStyle(
-                fontSize: isWeb ? 18 : 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xff2E2F44),
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Sube tu carta de motivación en formato PDF',
-              style: TextStyle(
-                fontSize: isWeb ? 14 : 12,
-                color: Colors.grey[600],
-              ),
-            ),
-            SizedBox(height: 16),
-            
-            // Sección de subida de PDF
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Column(
+      elevation: 8,
+      shadowColor: Colors.grey.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Colors.grey[50]!],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(isWeb ? 24 : 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  if (_motivationPdfData == null) ...[
-                    // Estado sin archivo
-                    Icon(
-                      Icons.picture_as_pdf,
-                      size: 48,
-                      color: Colors.grey[400],
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Ningún archivo seleccionado',
-                      style: TextStyle(
-                        fontSize: isWeb ? 16 : 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Sube tu carta de motivación en PDF',
-                      style: TextStyle(
-                        fontSize: isWeb ? 12 : 10,
-                        color: Colors.grey[500],
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _isUploadingMotivationPdf ? null : _uploadMotivationPdf,
-                      icon: _isUploadingMotivationPdf 
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Icon(Icons.upload_file, size: 18),
-                      label: Text(_isUploadingMotivationPdf ? 'Subiendo...' : 'Subir PDF'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xff6C4DDC),
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    // Estado con archivo subido
-                    Row(
+                    child: Icon(Icons.picture_as_pdf, color: Color(0xff6C4DDC), size: 24),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.picture_as_pdf,
-                          color: Colors.red[600],
-                          size: 24,
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _motivationPdfFileName ?? 'Carta de motivación.pdf',
-                                style: TextStyle(
-                                  fontSize: isWeb ? 16 : 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xff2E2F44),
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Archivo subido exitosamente',
-                                style: TextStyle(
-                                  fontSize: isWeb ? 12 : 10,
-                                  color: Colors.green[600],
-                                ),
-                              ),
-                            ],
+                        Text(
+                          'Carta de Motivación (PDF) *',
+                          style: TextStyle(
+                            fontSize: isWeb ? 20 : 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff2E2F44),
                           ),
                         ),
-                        IconButton(
-                          onPressed: _removeMotivationPdf,
-                          icon: Icon(Icons.delete, color: Colors.red[600]),
-                          tooltip: 'Eliminar archivo',
+                        SizedBox(height: 4),
+                        Text(
+                          'Sube tu carta de motivación en formato PDF',
+                          style: TextStyle(
+                            fontSize: isWeb ? 14 : 12,
+                            color: Colors.grey[600],
+                          ),
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ],
               ),
-            ),
-          ],
+              SizedBox(height: 20),
+              
+              // Sección de subida de PDF
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: _motivationPdfData == null 
+                        ? [Colors.red[50]!, Colors.red[100]!]
+                        : [Colors.green[50]!, Colors.green[100]!],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _motivationPdfData == null 
+                        ? Colors.red[200]!
+                        : Colors.green[300]!,
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (_motivationPdfData == null ? Colors.red : Colors.green).withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    if (_motivationPdfData == null) ...[
+                      // Estado sin archivo
+                      Container(
+                        padding: EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.picture_as_pdf_outlined,
+                          size: 56,
+                          color: Colors.red[400],
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Ningún archivo seleccionado',
+                        style: TextStyle(
+                          fontSize: isWeb ? 18 : 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Formato requerido: PDF',
+                        style: TextStyle(
+                          fontSize: isWeb ? 14 : 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _isUploadingMotivationPdf ? null : _uploadMotivationPdf,
+                        icon: _isUploadingMotivationPdf 
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Icon(Icons.upload_file, size: 20),
+                        label: Text(
+                          _isUploadingMotivationPdf ? 'Subiendo...' : 'Subir PDF',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xff6C4DDC),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 4,
+                        ),
+                      ),
+                    ] else ...[
+                      // Estado con archivo subido
+                      Container(
+                        padding: EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green[100],
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.check_circle,
+                                color: Colors.green[700],
+                                size: 32,
+                              ),
+                            ),
+                            SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _motivationPdfFileName ?? 'Carta de motivación.pdf',
+                                    style: TextStyle(
+                                      fontSize: isWeb ? 16 : 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xff2E2F44),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.check_circle, color: Colors.green[600], size: 16),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Archivo subido exitosamente',
+                                        style: TextStyle(
+                                          fontSize: isWeb ? 13 : 12,
+                                          color: Colors.green[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: _removeMotivationPdf,
+                              icon: Icon(Icons.delete_outline, color: Colors.red[600], size: 24),
+                              tooltip: 'Eliminar archivo',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildSubmitButton(bool isWeb) {
-    return SizedBox(
-      width: double.infinity,
-      height: isWeb ? 56 : 50,
-      child: ElevatedButton.icon(
-        onPressed: _isSubmitting ? null : _submitApplication,
-        icon: _isSubmitting
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Icon(Icons.send, size: isWeb ? 20 : 18),
-        label: Text(
-          _isSubmitting ? 'Enviando...' : 'Enviar Postulación',
-          style: TextStyle(
-            fontSize: isWeb ? 18 : 16,
-            fontWeight: FontWeight.w600,
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Color(0xff6C4DDC),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xff6C4DDC).withOpacity(0.4),
+            blurRadius: 15,
+            offset: Offset(0, 8),
           ),
-          elevation: 4,
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        height: isWeb ? 60 : 56,
+        child: ElevatedButton.icon(
+          onPressed: _isSubmitting ? null : _submitApplication,
+          icon: _isSubmitting
+              ? SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Icon(Icons.send_rounded, size: isWeb ? 22 : 20),
+          label: Text(
+            _isSubmitting ? 'Enviando Postulación...' : 'Enviar Postulación',
+            style: TextStyle(
+              fontSize: isWeb ? 18 : 17,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 0,
+          ),
         ),
       ),
     );

@@ -4,6 +4,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/user_context_service.dart';
+import '../services/adapters/careers_adapter.dart';
+import '../services/global_careers_initializer.dart';
 
 class BasicItemsListWidget extends StatefulWidget {
   final String type; // 'faculties' o 'programs'
@@ -114,38 +116,62 @@ class _BasicItemsListWidgetState extends State<BasicItemsListWidget> {
          }).toList();
          
        } else if (widget.type == 'programs') {
-         // Obtener solo las carreras globales (isGlobal: true)
-         QuerySnapshot querySnapshot = await firestore
-             .collection('programs')
-             .where('status', isEqualTo: 'active')
-             .where('isGlobal', isEqualTo: true)
-             .get();
-
-         items = querySnapshot.docs.map((doc) {
-           final data = doc.data() as Map<String, dynamic>;
-           return {
-             'id': doc.id,
-             'name': data['name'] ?? 'Sin nombre',
-             'code': data['code'] ?? '',
-             'careerCode': data['careerCode'] ?? data['code'] ?? '',
-             'duration': data['duration'] ?? 10,
-             'modality': data['modality'] ?? 'presencial',
-             'description': data['description'] ?? '',
-             'facultyId': data['facultyId'] ?? '',
-             'facultyName': data['facultyName'] ?? '',
-             'facultyCode': data['facultyCode'] ?? '',
-             'institutionId': data['institutionId'] ?? '',
-             'institutionName': data['institutionName'] ?? '',
-             'status': data['status'] ?? 'active',
-             'isGlobal': data['isGlobal'] ?? false,
-           };
-         }).toList();
+         // Las carreras globales están definidas en el código, no en la BDD
+         // Solo se insertan en la BDD cuando una institución las agrega
+         print('🔍 DEBUG - Cargando carreras globales desde lista estática...');
+         print('   - InstitutionId: $institutionId');
          
-         // Filtrar las que no pertenecen a la institución actual
-         items = items.where((program) {
-           final programInstitutionId = program['institutionId'];
-           return programInstitutionId != null && programInstitutionId != institutionId;
-         }).toList();
+         try {
+           // Obtener la lista estática de carreras globales del código
+           final staticGlobalCareers = GlobalCareersInitializer.globalCareers;
+           
+           print('📊 Carreras globales en lista estática: ${staticGlobalCareers.length}');
+
+           // Obtener carreras ya agregadas a la institución
+           final institutionPrograms = await CareersAdapter.getProgramsByInstitution(institutionId);
+           final institutionProgramNames = institutionPrograms
+               .map((p) => (p['name'] ?? '').toString().toLowerCase().trim())
+               .toSet();
+           
+           print('📊 Carreras en la institución: ${institutionPrograms.length}');
+           print('📋 Nombres de carreras en institución: $institutionProgramNames');
+
+           // Filtrar carreras globales: excluir las que ya están en la institución
+           items = staticGlobalCareers
+               .where((globalCareer) {
+                 final globalCareerName = (globalCareer['name'] ?? '').toString().toLowerCase().trim();
+                 final exists = institutionProgramNames.contains(globalCareerName);
+                 if (exists) {
+                   print('   ⏭️  Excluyendo: ${globalCareer['name']} (ya existe en institución)');
+                 }
+                 // Excluir si ya existe en la institución
+                 return !exists;
+               })
+               .map((data) {
+                 // Mapear de la estructura estática a la estructura esperada por el widget
+                 return {
+                   'id': '', // No tiene ID hasta que se agregue a la institución
+                   'name': data['name'] ?? 'Sin nombre',
+                   'code': data['code'] ?? data['careerCode'] ?? '',
+                   'careerCode': data['careerCode'] ?? data['code'] ?? '',
+                   'duration': data['duration'] ?? 10,
+                   'modality': data['modality'] ?? 'presencial',
+                   'description': data['description'] ?? '',
+                   'facultyId': '',
+                   'facultyName': '',
+                   'institutionId': '',
+                   'institutionName': '',
+                   'status': data['status'] ?? 'active',
+                   'isGlobal': data['is_global'] ?? true,
+                 };
+               })
+               .toList();
+           
+           print('✅ Carreras globales disponibles después del filtro: ${items.length}');
+         } catch (e) {
+           print('❌ Error cargando carreras globales: $e');
+           throw e;
+         }
        }
 
       // Filtrar por búsqueda si hay query

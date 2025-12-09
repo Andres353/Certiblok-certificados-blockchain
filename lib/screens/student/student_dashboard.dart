@@ -1,7 +1,9 @@
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/user_context_service.dart';
 import '../../services/institution_status_service.dart';
+import '../../services/adapters/auth_adapter.dart';
 import '../../widgets/suspended_institution_widget.dart';
 import 'join_institution_screen.dart';
 import 'share_certificates_screen.dart';
@@ -102,6 +104,41 @@ class _StudentDashboardState extends State<StudentDashboard> {
       });
     }
   }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cerrar Sesión'),
+        content: Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // Cerrar sesión y esperar a que se limpie
+      await AuthAdapter.logout();
+      // Esperar un momento para asegurar que la sesión se limpie completamente
+      await Future.delayed(Duration(milliseconds: 300));
+      // Verificar que la sesión esté realmente limpia
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null && mounted) {
+        // Recargar la página para que _getInitialRoute() se ejecute con estado limpio
+        html.window.location.reload();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -189,6 +226,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            tooltip: 'Cerrar Sesión',
+            onPressed: _logout,
+          ),
+        ],
       ),
       body: _userContext == null
         ? Center(
@@ -467,83 +511,249 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildInstitutionCard() {
+    final program = _userContext?.program ?? '';
+    final institutionName = _userContext?.institutionName ?? _userContext?.institution ?? 'Institución';
+    
     return Card(
       margin: EdgeInsets.only(bottom: 12),
-      elevation: 2,
+      elevation: 4,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Color(0xff6C4DDC),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: Text(
-                      _userContext?.institutionId?.substring(0, 3).toUpperCase() ?? 'U',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [
+              Color(0xff6C4DDC).withOpacity(0.05),
+              Color(0xff8B7DDC).withOpacity(0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icono de carrera y Universidad
+              Row(
+                children: [
+                  // Icono de carrera
+                  Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Color(0xff6C4DDC),
+                          Color(0xff8B7DDC),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0xff6C4DDC).withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: _getCareerIcon(program),
                     ),
                   ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _userContext?.institutionName ?? _userContext?.institution ?? 'Institución',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xff2E2F44),
-                        ),
-                      ),
-                      if (_userContext?.program != null) ...[
-                        SizedBox(height: 4),
+                  SizedBox(width: 16),
+                  // Información de universidad y programa
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Universidad
                         Text(
-                          'Programa: ${_userContext!.program}',
+                          institutionName,
                           style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff2E2F44),
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        SizedBox(height: 8),
+                        // Programa/Carrera
+                        if (program.isNotEmpty) ...[
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.school,
+                                size: 16,
+                                color: Color(0xff6C4DDC),
+                              ),
+                              SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  program,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          Text(
+                            'Programa no especificado',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  // Badge de estado
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.green[300]!,
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.green[600],
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Activo',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green[100],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'Activo',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.green[700],
-                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  // Función para obtener el icono basado en la carrera (usando la misma lógica de basic_items_list_widget)
+  Widget _getCareerIcon(String program) {
+    final programLower = program.toLowerCase();
+    IconData iconData;
+    Color iconColor = Colors.white;
+
+    // Mapeo de carreras a iconos (igual que en basic_items_list_widget)
+    if (programLower.contains('ingeniería') || programLower.contains('ingenieria')) {
+      if (programLower.contains('sistemas') || programLower.contains('informática') || programLower.contains('informatica') || programLower.contains('computación') || programLower.contains('computacion')) {
+        iconData = Icons.computer;
+      } else if (programLower.contains('civil')) {
+        iconData = Icons.construction;
+      } else if (programLower.contains('mecánica') || programLower.contains('mecanica')) {
+        iconData = Icons.precision_manufacturing;
+      } else if (programLower.contains('eléctrica') || programLower.contains('electrica')) {
+        iconData = Icons.electrical_services;
+      } else if (programLower.contains('industrial')) {
+        iconData = Icons.factory;
+      } else if (programLower.contains('química') || programLower.contains('quimica')) {
+        iconData = Icons.science;
+      } else if (programLower.contains('ambiental')) {
+        iconData = Icons.eco;
+      } else {
+        iconData = Icons.engineering;
+      }
+    } else if (programLower.contains('medicina')) {
+      iconData = Icons.medical_services;
+    } else if (programLower.contains('enfermería') || programLower.contains('enfermeria')) {
+      iconData = Icons.health_and_safety;
+    } else if (programLower.contains('psicología') || programLower.contains('psicologia')) {
+      iconData = Icons.psychology;
+    } else if (programLower.contains('derecho') || programLower.contains('jurídica') || programLower.contains('juridica')) {
+      iconData = Icons.gavel;
+    } else if (programLower.contains('administración') || programLower.contains('administracion')) {
+      iconData = Icons.business;
+    } else if (programLower.contains('contaduría') || programLower.contains('contaduria')) {
+      iconData = Icons.calculate;
+    } else if (programLower.contains('economía') || programLower.contains('economia')) {
+      iconData = Icons.trending_up;
+    } else if (programLower.contains('arquitectura')) {
+      iconData = Icons.architecture;
+    } else if (programLower.contains('diseño') || programLower.contains('diseno')) {
+      iconData = Icons.design_services;
+    } else if (programLower.contains('comunicación') || programLower.contains('comunicacion')) {
+      iconData = Icons.mic;
+    } else if (programLower.contains('educación') || programLower.contains('educacion') || programLower.contains('pedagogía') || programLower.contains('pedagogia')) {
+      iconData = Icons.school;
+    } else if (programLower.contains('turismo')) {
+      iconData = Icons.travel_explore;
+    } else if (programLower.contains('marketing')) {
+      iconData = Icons.campaign;
+    } else if (programLower.contains('finanzas')) {
+      iconData = Icons.account_balance;
+    } else if (programLower.contains('mercadotecnia')) {
+      iconData = Icons.shopping_cart;
+    } else if (programLower.contains('relaciones internacionales')) {
+      iconData = Icons.public;
+    } else if (programLower.contains('filosofía') || programLower.contains('filosofia')) {
+      iconData = Icons.auto_stories;
+    } else if (programLower.contains('historia')) {
+      iconData = Icons.history_edu;
+    } else if (programLower.contains('literatura')) {
+      iconData = Icons.menu_book;
+    } else if (programLower.contains('biología') || programLower.contains('biologia')) {
+      iconData = Icons.biotech;
+    } else if (programLower.contains('química') || programLower.contains('quimica')) {
+      iconData = Icons.science;
+    } else if (programLower.contains('matemáticas') || programLower.contains('matematicas') || programLower.contains('matemática') || programLower.contains('matematica')) {
+      iconData = Icons.functions;
+    } else if (programLower.contains('física') || programLower.contains('fisica')) {
+      iconData = Icons.speed;
+    } else if (programLower.contains('odontología') || programLower.contains('odontologia')) {
+      iconData = Icons.medical_information;
+    } else if (programLower.contains('veterinaria') || programLower.contains('zootecnia')) {
+      iconData = Icons.pets;
+    } else if (programLower.contains('agronomía') || programLower.contains('agronomia') || programLower.contains('agrícola') || programLower.contains('agricola')) {
+      iconData = Icons.agriculture;
+    } else if (programLower.contains('farmacia') || programLower.contains('farmacéutica') || programLower.contains('farmaceutica')) {
+      iconData = Icons.medication;
+    } else if (programLower.contains('artes') || programLower.contains('plásticas') || programLower.contains('plasticas')) {
+      iconData = Icons.palette;
+    } else {
+      // Icono por defecto
+      iconData = Icons.school;
+    }
+
+    return Icon(
+      iconData,
+      color: iconColor,
+      size: 36,
     );
   }
 

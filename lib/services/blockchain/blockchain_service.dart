@@ -23,6 +23,8 @@ class BlockchainService {
   late ContractFunction _issueCertificateFunction;
   late ContractFunction _verifyCertificateFunction;
   late ContractFunction _getCertificateFunction;
+  late ContractFunction _revokeCertificateFunction;
+  late ContractFunction _getTotalCertificatesFunction;
   
   // ABI del contrato (simplificado, debe coincidir con el contrato)
   static const String contractABI = '''
@@ -79,6 +81,20 @@ class BlockchainService {
       "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
       "stateMutability": "view",
       "type": "function"
+    },
+    {
+      "inputs": [{"internalType": "string", "name": "_certificateHash", "type": "string"}],
+      "name": "revokeCertificate",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getTotalCertificates",
+      "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+      "stateMutability": "view",
+      "type": "function"
     }
   ]
   ''';
@@ -110,6 +126,8 @@ class BlockchainService {
       _issueCertificateFunction = _contract.function('issueCertificate');
       _verifyCertificateFunction = _contract.function('verifyCertificate');
       _getCertificateFunction = _contract.function('getCertificate');
+      _revokeCertificateFunction = _contract.function('revokeCertificate');
+      _getTotalCertificatesFunction = _contract.function('getTotalCertificates');
       
       print('✅ BlockchainService inicializado correctamente');
       print('   Red: ${BlockchainConfig.useTestnet ? "Mumbai Testnet" : "Polygon Mainnet"}');
@@ -133,7 +151,24 @@ class BlockchainService {
     final data = '$certificateId|$studentId|$institutionId|${issuedAt.toIso8601String()}';
     final bytes = utf8.encode(data);
     final hash = sha256.convert(bytes);
-    return hash.toString();
+    final hashString = hash.toString();
+    
+    // Asegurar que el hash tenga exactamente 64 caracteres (SHA-256 siempre produce 64 caracteres hex)
+    // Si por alguna razón tiene más, recortar; si tiene menos, es un error
+    if (hashString.length > 64) {
+      print('⚠️ ADVERTENCIA: Hash SHA-256 tiene ${hashString.length} caracteres, recortando a 64');
+      return hashString.substring(0, 64);
+    } else if (hashString.length < 64) {
+      throw Exception('ERROR CRÍTICO: Hash SHA-256 tiene solo ${hashString.length} caracteres. Debe tener 64.');
+    }
+    
+    // Validar que solo contenga caracteres hexadecimales
+    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(hashString)) {
+      throw Exception('ERROR CRÍTICO: Hash contiene caracteres no hexadecimales: $hashString');
+    }
+    
+    print('✅ Hash generado correctamente: ${hashString.length} caracteres');
+    return hashString;
   }
   
   /// Obtener la wallet privada (guardada en Supabase)
@@ -581,6 +616,25 @@ class BlockchainService {
         throw Exception('Balance insuficiente. Necesitas al menos 0.01 MATIC para emitir certificados.');
       }
       
+      // Obtener el nonce actual de la cuenta para evitar conflictos
+      final address = await credentials.extractAddress();
+      final nonce = await _client.getTransactionCount(address);
+      
+      // Obtener el gas price actual de la red y usar un 20% más para asegurar que se procese
+      int gasPriceGwei = 50; // Valor base más alto
+      try {
+        final gasPrice = await _client.getGasPrice();
+        // Convertir de wei a gwei: 1 gwei = 10^9 wei
+        final gasPriceInWei = gasPrice.getInWei;
+        final currentGasPriceGwei = (gasPriceInWei / BigInt.from(1000000000)).toInt();
+        // Usar el mayor entre el gas price actual + 20% o 50 gwei mínimo
+        gasPriceGwei = (currentGasPriceGwei * 1.2).round();
+        if (gasPriceGwei < 50) gasPriceGwei = 50; // Mínimo 50 gwei
+        print('💰 Gas price actual de la red: ${currentGasPriceGwei} gwei, usando: $gasPriceGwei gwei');
+      } catch (e) {
+        print('⚠️ No se pudo obtener gas price de la red, usando valor por defecto: $gasPriceGwei gwei');
+      }
+      
       // Llamar a la función del contrato
       final transaction = await _client.sendTransaction(
         credentials,
@@ -593,18 +647,22 @@ class BlockchainService {
             institutionId,
             certificateHash,
           ],
-          gasPrice: EtherAmount.fromUnitAndValue(EtherUnit.gwei, BigInt.from(30)), // 30 gwei
+          gasPrice: EtherAmount.fromUnitAndValue(EtherUnit.gwei, BigInt.from(gasPriceGwei)),
           maxGas: 200000, // Gas limit
+          nonce: nonce, // Usar el nonce actual
         ),
         chainId: chainId,
         fetchChainIdFromNetworkId: false,
       );
       
-      print('✅ Certificado emitido en blockchain');
-      print('   Hash de transacción: ${transaction}');
-      print('   Verifica en: ${BlockchainConfig.explorerUrl}/tx/$transaction');
+      // Limpiar el hash de transacción (eliminar espacios, saltos de línea, etc.)
+      final cleanTransactionHash = transaction.toString().trim().replaceAll(RegExp(r'\s+'), '');
       
-      return transaction;
+      print('✅ Certificado emitido en blockchain');
+      print('   Hash de transacción: $cleanTransactionHash');
+      print('   Verifica en: ${BlockchainConfig.explorerUrl}/tx/$cleanTransactionHash');
+      
+      return cleanTransactionHash;
     } catch (e) {
       print('❌ Error emitiendo certificado en blockchain: $e');
       rethrow;
@@ -614,10 +672,107 @@ class BlockchainService {
   /// Verificar certificado en la blockchain
   Future<Map<String, dynamic>> verifyCertificate(String certificateHash) async {
     try {
+      // Validar y limpiar el hash
+      String cleanHash = certificateHash.trim();
+      
+      // Remover 0x si existe (no debería estar en el hash del certificado)
+      if (cleanHash.startsWith('0x')) {
+        cleanHash = cleanHash.substring(2);
+        print('⚠️ Hash tenía prefijo 0x, removido: $cleanHash');
+      }
+      
+      // Normalizar el hash a exactamente 64 caracteres
+      if (cleanHash.length > 64) {
+        print('⚠️ ADVERTENCIA: Hash tiene ${cleanHash.length} caracteres, recortando a 64');
+        cleanHash = cleanHash.substring(0, 64);
+      } else if (cleanHash.length < 64) {
+        throw Exception('Hash inválido: debe tener 64 caracteres hexadecimales. Longitud actual: ${cleanHash.length}');
+      }
+      
+      // Validar que solo contenga caracteres hexadecimales
+      if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(cleanHash)) {
+        throw Exception('Hash inválido: debe contener solo caracteres hexadecimales (0-9, a-f, A-F). Hash recibido: $cleanHash');
+      }
+      
+      print('🔍 Verificando certificado con hash: $cleanHash');
+      print('   Longitud: ${cleanHash.length} caracteres');
+      print('   Tipo: ${cleanHash.runtimeType}');
+      print('   Primeros 10 caracteres: ${cleanHash.substring(0, 10)}...');
+      print('   Últimos 10 caracteres: ...${cleanHash.substring(cleanHash.length - 10)}');
+      
+      print('🔍 Llamando a verifyCertificate con hash: $cleanHash');
+      print('   Tipo del hash antes de pasar: ${cleanHash.runtimeType}');
+      
+      // Intentar usar getCertificate primero para verificar si el problema es específico de verifyCertificate
+      // Si getCertificate funciona, entonces el problema está en verifyCertificate
+      print('🔍 Intentando usar getCertificate primero...');
+      final certData = await getCertificate(cleanHash);
+      if (certData != null) {
+        print('✅ getCertificate funcionó, el certificado existe');
+        return {
+          'exists': true,
+          'revoked': certData['revoked'] as bool,
+          'certificateId': certData['certificateId'] as String,
+          'issuedAt': certData['issuedAt'] as int,
+          'valid': !(certData['revoked'] as bool),
+        };
+      }
+      
+      // Si getCertificate retornó null, intentar verifyCertificate
+      print('⚠️ getCertificate retornó null, intentando verifyCertificate...');
+      
+      // El problema puede ser que web3dart está interpretando strings de 64 caracteres hex como bytes32
+      // Solución: agregar un prefijo al hash para evitar que se interprete como bytes32
+      // El contrato Solidity puede manejar el string con prefijo y seguir funcionando correctamente
+      // ya que compara el string completo, no solo los últimos 64 caracteres
+      final hashWithPrefix = 'cert_$cleanHash';
+      
+      print('   Hash con prefijo para evitar interpretación como bytes32: $hashWithPrefix');
+      print('   Longitud del hash con prefijo: ${hashWithPrefix.length}');
+      
+      // NOTA: Esta solución requiere que el contrato también use el prefijo al guardar/verificar
+      // Si el contrato no tiene el prefijo, esto no funcionará
+      // Alternativa: usar el hash sin prefijo pero forzar que se codifique como string UTF-8
+      final hashAsUtf8String = cleanHash; // Usar el hash original sin prefijo
+      
+      print('   Usando hash original: $hashAsUtf8String');
+      
+      // PROBLEMA CONOCIDO: web3dart tiene un bug al codificar strings de 64 caracteres hexadecimales
+      // como parámetros en llamadas call(). El error "Invalid typed array length: 32" ocurre porque
+      // web3dart intenta interpretar el string como bytes32.
+      // 
+      // SOLUCIÓN TEMPORAL: Usar certificateExists que es un mapping público y puede funcionar mejor
+      print('⚠️ Usando workaround para evitar bug de web3dart con strings de 64 caracteres...');
+      
+      // Intentar usar certificateExists primero (mapping público, puede funcionar mejor)
+      try {
+        final existsResult = await _client.call(
+          contract: _contract,
+          function: _contract.function('certificateExists'),
+          params: [hashAsUtf8String],
+        );
+        
+        final exists = existsResult[0] as bool;
+        if (!exists) {
+          return {
+            'exists': false,
+            'revoked': false,
+            'valid': false,
+          };
+        }
+        
+        print('✅ certificateExists funcionó, el certificado existe');
+        // Si existe, intentar obtener más información usando getCertificate
+        // (aunque también puede fallar con el mismo error)
+      } catch (e) {
+        print('⚠️ certificateExists también falló: $e');
+      }
+      
+      // Intentar verifyCertificate (puede fallar con el mismo error)
       final result = await _client.call(
         contract: _contract,
         function: _verifyCertificateFunction,
-        params: [certificateHash],
+        params: [hashAsUtf8String],
       );
       
       final exists = result[0] as bool;
@@ -634,6 +789,9 @@ class BlockchainService {
       };
     } catch (e) {
       print('❌ Error verificando certificado: $e');
+      print('   Hash recibido: ${certificateHash.length} caracteres');
+      print('   Hash (primeros 20): ${certificateHash.substring(0, certificateHash.length > 20 ? 20 : certificateHash.length)}...');
+      print('   Tipo de error: ${e.runtimeType}');
       return {
         'exists': false,
         'revoked': false,
@@ -643,13 +801,86 @@ class BlockchainService {
     }
   }
   
+  /// Revocar certificado en la blockchain
+  Future<String> revokeCertificate(String certificateHash) async {
+    try {
+      // Obtener o crear wallet automáticamente
+      final credentials = await getOrCreateWalletCredentials();
+      
+      // Verificar balance
+      final balance = await getBalance();
+      if (balance.getInWei < EtherAmount.fromUnitAndValue(EtherUnit.wei, BigInt.from(10000000000000000)).getInWei) {
+        throw Exception('Balance insuficiente. Necesitas al menos 0.01 MATIC para revocar certificados.');
+      }
+      
+      // Obtener el nonce actual de la cuenta para evitar conflictos
+      final address = await credentials.extractAddress();
+      final nonce = await _client.getTransactionCount(address);
+      
+      // Obtener el gas price actual de la red y usar un 20% más para asegurar que se procese
+      int gasPriceGwei = 50; // Valor base más alto
+      try {
+        final gasPrice = await _client.getGasPrice();
+        // Convertir de wei a gwei: 1 gwei = 10^9 wei
+        final gasPriceInWei = gasPrice.getInWei;
+        final currentGasPriceGwei = (gasPriceInWei / BigInt.from(1000000000)).toInt();
+        // Usar el mayor entre el gas price actual + 20% o 50 gwei mínimo
+        gasPriceGwei = (currentGasPriceGwei * 1.2).round();
+        if (gasPriceGwei < 50) gasPriceGwei = 50; // Mínimo 50 gwei
+        print('💰 Gas price actual de la red: ${currentGasPriceGwei} gwei, usando: $gasPriceGwei gwei');
+      } catch (e) {
+        print('⚠️ No se pudo obtener gas price de la red, usando valor por defecto: $gasPriceGwei gwei');
+      }
+      
+      // Llamar a la función del contrato
+      final transaction = await _client.sendTransaction(
+        credentials,
+        Transaction.callContract(
+          contract: _contract,
+          function: _revokeCertificateFunction,
+          parameters: [certificateHash],
+          gasPrice: EtherAmount.fromUnitAndValue(EtherUnit.gwei, BigInt.from(gasPriceGwei)),
+          maxGas: 200000, // Gas limit
+          nonce: nonce, // Usar el nonce actual
+        ),
+        chainId: chainId,
+        fetchChainIdFromNetworkId: false,
+      );
+      
+      // Limpiar el hash de transacción (eliminar espacios, saltos de línea, etc.)
+      final cleanTransactionHash = transaction.toString().trim().replaceAll(RegExp(r'\s+'), '');
+      
+      print('✅ Certificado revocado en blockchain');
+      print('   Hash de transacción: $cleanTransactionHash');
+      print('   Verifica en: ${BlockchainConfig.explorerUrl}/tx/$cleanTransactionHash');
+      
+      return cleanTransactionHash;
+    } catch (e) {
+      print('❌ Error revocando certificado en blockchain: $e');
+      rethrow;
+    }
+  }
+  
   /// Obtener información completa del certificado
   Future<Map<String, dynamic>?> getCertificate(String certificateHash) async {
     try {
+      // Normalizar el hash antes de pasarlo
+      String cleanHash = certificateHash.trim();
+      if (cleanHash.startsWith('0x')) {
+        cleanHash = cleanHash.substring(2);
+      }
+      if (cleanHash.length > 64) {
+        cleanHash = cleanHash.substring(0, 64);
+      }
+      
+      // Forzar codificación UTF-8
+      final hashBytes = utf8.encode(cleanHash);
+      final hashAsUtf8String = utf8.decode(hashBytes);
+      
       final result = await _client.call(
         contract: _contract,
         function: _getCertificateFunction,
-        params: [certificateHash],
+        params: [hashAsUtf8String],
       );
       
       // El resultado es una tupla (struct)
@@ -667,6 +898,23 @@ class BlockchainService {
     } catch (e) {
       print('❌ Error obteniendo certificado: $e');
       return null;
+    }
+  }
+  
+  /// Obtener el total de certificados emitidos en blockchain
+  Future<int> getTotalCertificates() async {
+    try {
+      final result = await _client.call(
+        contract: _contract,
+        function: _getTotalCertificatesFunction,
+        params: [],
+      );
+      
+      final total = result[0] as BigInt;
+      return total.toInt();
+    } catch (e) {
+      print('❌ Error obteniendo total de certificados: $e');
+      return 0;
     }
   }
   

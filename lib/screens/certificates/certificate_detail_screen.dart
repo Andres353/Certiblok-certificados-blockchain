@@ -9,6 +9,8 @@ import 'dart:html' as html;
 import 'dart:convert';
 import '../../services/adapters/certificate_adapter.dart';
 import '../../models/certificate.dart';
+import '../../services/blockchain/blockchain_config.dart';
+import '../../services/alert_service.dart';
 
 class CertificateDetailScreen extends StatelessWidget {
   final Certificate certificate;
@@ -198,8 +200,11 @@ class CertificateDetailScreen extends StatelessWidget {
             
             SizedBox(height: 32),
             
-            // Botones de acción (solo para estudiantes)
-            if (!isAdminView) _buildActionButtons(context),
+            // Botones de acción
+            if (!isAdminView) 
+              _buildActionButtons(context)
+            else
+              _buildRevokeButton(context),
                   ],
                 ),
               ),
@@ -274,11 +279,13 @@ class CertificateDetailScreen extends StatelessWidget {
               Icons.qr_code,
                 Color(0xff9C27B0),
                 [
-                  _buildModernInfoRow('ID Certificado', certificate.id, Icons.fingerprint, context, isCode: true),
-                  _buildModernInfoRow('Hash Único', certificate.uniqueHash ?? 'No disponible', Icons.security, context, isCode: true),
                   _buildModernInfoRow('Código QR', certificate.qrCode, Icons.qr_code, context, isCode: true),
-                if (certificate.blockchainHash != null)
-                    _buildModernInfoRow('Hash Blockchain', certificate.blockchainHash!, Icons.link, context, isCode: true),
+                if (certificate.blockchainHash != null && certificate.blockchainHash!.isNotEmpty) ...[
+                    _buildBlockchainHashRow(certificate.blockchainHash!, context),
+                    // Solo mostrar el enlace al contrato para admin/emisor
+                    if (isAdminView)
+                      _buildBlockchainVerificationButton(context),
+                  ],
                 ],
               ),
             ),
@@ -415,6 +422,191 @@ class CertificateDetailScreen extends StatelessWidget {
                       ),
               ],
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockchainHashRow(String blockchainHash, BuildContext context) {
+    // Obtener el hash de la transacción desde data (no el hash del certificado)
+    String? transactionHash = certificate.data['blockchain_transaction_hash'] as String?;
+    
+    // Si no hay hash de transacción, usar el hash del certificado como fallback
+    // pero esto no funcionará en Polygonscan ya que es un hash SHA-256, no un hash de transacción
+    if (transactionHash == null || transactionHash.isEmpty) {
+      transactionHash = null; // No mostrar enlace si no hay hash de transacción
+    } else {
+      // Limpiar el hash de transacción (eliminar espacios, saltos de línea, etc.)
+      transactionHash = transactionHash.trim().replaceAll(RegExp(r'\s+'), '');
+      
+      // Asegurar que tenga prefijo 0x
+      if (!transactionHash.startsWith('0x')) {
+        transactionHash = '0x$transactionHash';
+      }
+    }
+    
+    // Construir URL del explorador solo si hay hash de transacción
+    final explorerUrl = BlockchainConfig.explorerUrl;
+    final transactionUrl = transactionHash != null ? '$explorerUrl/tx/$transactionHash' : null;
+    
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.link,
+            size: 16,
+            color: Colors.grey[600],
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hash Blockchain',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                SizedBox(height: 2),
+                GestureDetector(
+                  onTap: transactionUrl != null ? () async {
+                    try {
+                      final Uri url = Uri.parse(transactionUrl);
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
+                        );
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error al abrir el explorador: $e')),
+                      );
+                    }
+                  } : null,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            blockchainHash.length > 20 ? '${blockchainHash.substring(0, 20)}...' : blockchainHash,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: Color(0xff6C4DDC),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(Icons.open_in_new, size: 12, color: Color(0xff6C4DDC)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockchainVerificationButton(BuildContext context) {
+    // Obtener la dirección del contrato inteligente
+    final contractAddress = BlockchainConfig.contractAddress;
+    
+    // Si no hay dirección del contrato, no mostrar el enlace
+    if (contractAddress.isEmpty || contractAddress == '0x0000000000000000000000000000000000000000') {
+      return SizedBox.shrink();
+    }
+    
+    // Construir URL del explorador para el contrato (no la transacción)
+    final explorerUrl = BlockchainConfig.explorerUrl;
+    final contractUrl = '$explorerUrl/address/$contractAddress';
+    
+    return Padding(
+      padding: EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.link,
+            size: 16,
+            color: Colors.grey[600],
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Verificar en Blockchain',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                SizedBox(height: 2),
+                GestureDetector(
+                  onTap: () async {
+                    try {
+                      final Uri url = Uri.parse(contractUrl);
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
+                        );
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error al abrir el explorador: $e')),
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Color(0xff6C4DDC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Ver Contrato en Polygonscan',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: Color(0xff6C4DDC),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(Icons.open_in_new, size: 12, color: Color(0xff6C4DDC)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -767,6 +959,288 @@ class CertificateDetailScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildRevokeButton(BuildContext context) {
+    // Solo mostrar si el certificado no está ya revocado
+    if (certificate.status.toLowerCase() == 'revoked') {
+      return Container(
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.red[50],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.red[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.block, color: Colors.red[700], size: 24),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Certificado Revocado',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.red[900],
+                    ),
+                  ),
+                  if (certificate.revokedReason != null) ...[
+                    SizedBox(height: 4),
+                    Text(
+                      'Motivo: ${certificate.revokedReason}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.red[700],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Colors.red.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: Colors.red.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.red[700], size: 24),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Revocar Certificado',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Colors.red[900],
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Esta acción no se puede deshacer. El certificado quedará marcado como revocado.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showRevokeDialog(context),
+                icon: Icon(Icons.block, size: 20),
+                label: Text(
+                  'Revocar Certificado',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[700],
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRevokeDialog(BuildContext context) {
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.red[700], size: 28),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Revocar Certificado',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red[900],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '¿Estás seguro de que deseas revocar este certificado?',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Esta acción marcará el certificado como revocado y notificará al estudiante. Esta acción no se puede deshacer.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  TextFormField(
+                    controller: reasonController,
+                    decoration: InputDecoration(
+                      labelText: 'Motivo de revocación *',
+                      hintText: 'Ej: Error en los datos, fraude detectado, etc.',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      prefixIcon: Icon(Icons.description),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                    ),
+                    maxLines: 3,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Debes ingresar un motivo para revocar el certificado';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(
+                'Cancelar',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(dialogContext).pop();
+                  await _revokeCertificate(context, reasonController.text.trim());
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[700],
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Revocar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _revokeCertificate(BuildContext context, String reason) async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Revocando certificado...'),
+            ],
+          ),
+        ),
+      );
+
+      final success = await CertificateAdapter.revokeCertificate(
+        certificate.id,
+        reason,
+      );
+
+      // Cerrar diálogo de carga
+      Navigator.of(context).pop();
+
+      if (success) {
+        AlertService.showSuccess(
+          context,
+          'Certificado Revocado',
+          'El certificado ha sido revocado exitosamente. El estudiante ha sido notificado por email.',
+        );
+        
+        // Regresar a la pantalla anterior con resultado para recargar la lista
+        Navigator.of(context).pop(true);
+      } else {
+        AlertService.showError(
+          context,
+          'Error',
+          'No se pudo revocar el certificado. Por favor, intenta nuevamente.',
+        );
+      }
+    } catch (e) {
+      // Cerrar diálogo de carga si está abierto
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      AlertService.showError(
+        context,
+        'Error',
+        'Error al revocar el certificado: $e',
+      );
+    }
   }
 
   String _getCertificateTypeLabel(String type) {

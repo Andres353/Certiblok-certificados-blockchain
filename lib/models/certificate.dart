@@ -139,7 +139,7 @@ class Certificate {
       issuedByName: data['issued_by_name'],
       issuedByRole: data['issued_by_role'],
       revokedAt: data['revoked_at'] != null ? DateTime.parse(data['revoked_at']) : null,
-      revokedReason: data['revoked_reason'],
+      revokedReason: data['revoked_reason'] ?? (data['data'] != null && data['data'] is Map ? (data['data'] as Map<String, dynamic>)['revoked_reason'] : null),
       uniqueHash: data['unique_hash'],
       blockchainHash: data['blockchain_hash'],
       validationHistory: data['validation_history'] != null 

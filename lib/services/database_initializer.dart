@@ -2,21 +2,20 @@
 // Servicio para inicializar la base de datos con datos de ejemplo
 
 import 'institution_service.dart';
-import '../models/institution.dart';
 import '../data/sample_institutions.dart';
 
 class DatabaseInitializer {
   // Poblar la base de datos con instituciones de ejemplo
   static Future<void> initializeSampleData() async {
     try {
-      print('Inicializando datos de ejemplo...');
-      
       // Verificar si ya existen instituciones
       final existingInstitutions = await InstitutionService.getAllInstitutions();
       if (existingInstitutions.isNotEmpty) {
-        print('Ya existen instituciones en la base de datos. Saltando inicialización.');
+        // Silenciosamente retornar si ya existen (no mostrar mensaje)
         return;
       }
+      
+      print('Inicializando datos de ejemplo...');
       
       // Crear instituciones de ejemplo
       for (final sampleInstitution in SampleInstitutions.allInstitutions) {
@@ -31,15 +30,23 @@ class DatabaseInitializer {
             settings: sampleInstitution.settings,
             createdBy: 'system_init',
           );
-          print('Institución creada: ${sampleInstitution.name}');
         } catch (e) {
-          print('Error creando institución ${sampleInstitution.name}: $e');
+          // Silenciosamente continuar si hay error (probablemente duplicado)
+          final errorStr = e.toString().toLowerCase();
+          if (!errorStr.contains('duplicate') && 
+              !errorStr.contains('already exists') &&
+              !errorStr.contains('unique constraint')) {
+            print('⚠️ Error creando institución ${sampleInstitution.name}: $e');
+          }
         }
       }
-      
-      print('Datos de ejemplo inicializados correctamente.');
     } catch (e) {
-      print('Error inicializando datos de ejemplo: $e');
+      // Solo mostrar error si no es un error esperado (datos ya existen)
+      final errorStr = e.toString().toLowerCase();
+      if (!errorStr.contains('already exists') && 
+          !errorStr.contains('duplicate')) {
+        print('⚠️ Error inicializando datos de ejemplo: $e');
+      }
     }
   }
   

@@ -1,7 +1,10 @@
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/user_context_service.dart';
 import '../../services/institution_status_service.dart';
+import '../../services/adapters/auth_adapter.dart';
 import '../../widgets/suspended_institution_widget.dart';
 import 'admin_emit_certificate_screen.dart';
 import 'admin_bulk_emit_certificates_screen.dart';
@@ -50,6 +53,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cerrar Sesión'),
+        content: Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // Cerrar sesión y esperar a que se limpie
+      await AuthAdapter.logout();
+      // Esperar un momento para asegurar que la sesión se limpie completamente
+      await Future.delayed(Duration(milliseconds: 300));
+      // Verificar que la sesión esté realmente limpia
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null && mounted) {
+        // Recargar la página para que _getInitialRoute() se ejecute con estado limpio
+        html.window.location.reload();
+      }
     }
   }
 
@@ -129,6 +166,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            tooltip: 'Cerrar Sesión',
+            onPressed: _logout,
+          ),
+        ],
       ),
       body: isWeb ? _buildWebLayout(context) : _buildMobileLayout(context),
     );

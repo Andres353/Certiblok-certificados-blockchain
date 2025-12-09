@@ -9,6 +9,7 @@ import '../emisor_permission_service.dart';
 import 'supabase_config.dart';
 import '../blockchain/blockchain_service.dart';
 import '../blockchain/blockchain_config.dart';
+import '../certificate_notification_service.dart';
 
 class SupabaseCertificate {
   final String id;
@@ -112,8 +113,8 @@ class SupabaseCertificate {
       revokedAt: data['revoked_at'] != null 
           ? DateTime.parse(data['revoked_at'])
           : null,
-      revokedBy: data['revoked_by'],
-      revokedReason: data['revoked_reason'],
+      revokedBy: data['revoked_by'] ?? (data['data'] != null && data['data'] is Map ? (data['data'] as Map<String, dynamic>)['revoked_by'] : null),
+      revokedReason: data['revoked_reason'] ?? (data['data'] != null && data['data'] is Map ? (data['data'] as Map<String, dynamic>)['revoked_reason'] : null),
       createdAt: data['created_at'] != null 
           ? DateTime.parse(data['created_at'])
           : DateTime.now(),
@@ -364,9 +365,10 @@ class SupabaseCertificateService {
 
       // OBLIGATORIO: Emitir en blockchain antes de guardar en base de datos
       String blockchainTransactionHash;
+      String certificateBlockchainHash; // Hash del certificado (no de la transacción)
       try {
         final blockchainService = BlockchainService();
-        final blockchainHash = BlockchainService.generateCertificateHash(
+        certificateBlockchainHash = BlockchainService.generateCertificateHash(
           certificateId: certificateId,
           studentId: studentId,
           institutionId: targetInstitutionId,
@@ -410,14 +412,26 @@ class SupabaseCertificateService {
           certificateId: certificateId,
           studentId: studentId,
           institutionId: targetInstitutionId,
-          certificateHash: blockchainHash,
+          certificateHash: certificateBlockchainHash,
         );
         
         if (blockchainTransactionHash.isEmpty) {
           throw Exception('No se pudo obtener el hash de transacción de blockchain. El certificado NO se guardará.');
         }
         
-        print('✅ Certificado emitido exitosamente en blockchain: $blockchainTransactionHash');
+        print('✅ Certificado emitido exitosamente en blockchain');
+        print('   Hash del certificado: $certificateBlockchainHash');
+        print('   Longitud del hash: ${certificateBlockchainHash.length} caracteres');
+        print('   Hash de transacción: $blockchainTransactionHash');
+        print('   Longitud del hash de transacción: ${blockchainTransactionHash.length} caracteres');
+        
+        // Validar que el hash del certificado tenga el formato correcto (64 caracteres hexadecimales)
+        if (certificateBlockchainHash.length != 64) {
+          throw Exception('Hash del certificado inválido: debe tener 64 caracteres. Longitud actual: ${certificateBlockchainHash.length}');
+        }
+        if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(certificateBlockchainHash)) {
+          throw Exception('Hash del certificado inválido: debe contener solo caracteres hexadecimales');
+        }
       } catch (e) {
         print('❌ Error emitiendo en blockchain. El certificado NO se guardará: $e');
         // Lanzar error para evitar que se guarde el certificado en la BD
@@ -425,8 +439,40 @@ class SupabaseCertificateService {
       }
 
       // Agregar hash de blockchain (obligatorio)
-      certificateData['blockchain_hash'] = blockchainTransactionHash;
+      // IMPORTANTE: Guardar el hash del certificado, no el hash de la transacción
+      // Asegurar que el hash esté limpio (sin espacios, sin 0x, exactamente 64 caracteres)
+      String cleanCertificateHash = certificateBlockchainHash.trim();
+      
+      // Remover prefijo 0x si existe
+      if (cleanCertificateHash.startsWith('0x')) {
+        cleanCertificateHash = cleanCertificateHash.substring(2);
+        print('⚠️ Hash tenía prefijo 0x, removido');
+      }
+      
+      // Asegurar que tenga exactamente 64 caracteres
+      if (cleanCertificateHash.length > 64) {
+        print('⚠️ ADVERTENCIA: Hash tiene ${cleanCertificateHash.length} caracteres, recortando a 64');
+        cleanCertificateHash = cleanCertificateHash.substring(0, 64);
+      } else if (cleanCertificateHash.length < 64) {
+        throw Exception('ERROR CRÍTICO: Hash del certificado tiene solo ${cleanCertificateHash.length} caracteres. Debe tener 64. Hash: $cleanCertificateHash');
+      }
+      
+      // Validar formato hexadecimal
+      if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(cleanCertificateHash)) {
+        throw Exception('ERROR CRÍTICO: Hash del certificado contiene caracteres no hexadecimales. Hash: $cleanCertificateHash');
+      }
+      
+      certificateData['blockchain_hash'] = cleanCertificateHash;
+      print('💾 Guardando hash en BD: $cleanCertificateHash (${cleanCertificateHash.length} caracteres)');
       certificateData['blockchain_network'] = BlockchainConfig.useTestnet ? 'polygon-mumbai' : 'polygon-mainnet';
+      
+      // Guardar el hash de transacción en el campo data (JSONB) para referencia
+      if (certificateData['data'] == null) {
+        certificateData['data'] = <String, dynamic>{};
+      }
+      final dataMap = Map<String, dynamic>.from(certificateData['data'] as Map? ?? {});
+      dataMap['blockchain_transaction_hash'] = blockchainTransactionHash;
+      certificateData['data'] = dataMap;
 
       final response = await _client
           .from('certificates')
@@ -563,20 +609,105 @@ class SupabaseCertificateService {
         throw Exception('Usuario no autenticado');
       }
 
+      // Verificar permisos - solo admins y emisores pueden revocar
+      if (!['super_admin', 'admin_institution', 'emisor'].contains(context.userRole)) {
+        throw Exception('No tienes permisos para revocar certificados');
+      }
+
+      // Obtener el certificado completo para tener todos los datos necesarios
+      final certificate = await getCertificate(certificateId);
+      if (certificate == null) {
+        throw Exception('Certificado no encontrado');
+      }
+
+      // Verificar que no esté ya revocado
+      if (certificate.status.toLowerCase() == 'revoked') {
+        throw Exception('El certificado ya está revocado');
+      }
+
+      // 1. Revocar en blockchain si tiene blockchainHash (OBLIGATORIO si existe)
+      String? revocationTransactionHash;
+      bool blockchainRevocationSuccess = false;
+      
+      if (certificate.blockchainHash != null && certificate.blockchainHash!.isNotEmpty) {
+        try {
+          // Validar formato del hash antes de enviar
+          String cleanHash = certificate.blockchainHash!.trim();
+          if (cleanHash.startsWith('0x')) {
+            cleanHash = cleanHash.substring(2);
+          }
+          if (cleanHash.length != 64 || !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(cleanHash)) {
+            throw Exception('Hash del certificado inválido: debe tener 64 caracteres hexadecimales');
+          }
+          
+          final blockchainService = BlockchainService();
+          final contractAddress = BlockchainConfig.contractAddress;
+          if (contractAddress.isEmpty || contractAddress == '0x0000000000000000000000000000000000000000') {
+            throw Exception('El contrato blockchain no está configurado. No se puede revocar en blockchain.');
+          }
+          
+          await blockchainService.initialize(contractAddress);
+          revocationTransactionHash = await blockchainService.revokeCertificate(cleanHash);
+          blockchainRevocationSuccess = true;
+          print('✅ Certificado revocado en blockchain: $cleanHash');
+          print('   Hash de transacción de revocación: $revocationTransactionHash');
+        } catch (e) {
+          print('❌ Error revocando en blockchain: $e');
+          // Si el certificado tiene blockchainHash, la revocación en blockchain es OBLIGATORIA
+          // No continuar con revocación en BD si falla blockchain para mantener consistencia
+          throw Exception('Error al revocar certificado en blockchain: $e. La revocación NO se completó. Verifica que la wallet tenga permisos de admin en el contrato y suficiente balance de MATIC.');
+        }
+      } else {
+        print('ℹ️ Certificado no tiene blockchainHash, revocando solo en base de datos');
+        blockchainRevocationSuccess = true; // No hay blockchain, así que es exitoso
+      }
+
+      // 2. Actualizar en base de datos (solo si blockchain fue exitoso o no hay blockchainHash)
+      if (!blockchainRevocationSuccess) {
+        throw Exception('No se puede actualizar BD: la revocación en blockchain falló');
+      }
+      
+      // Nota: La tabla solo tiene revoked_at, no revoked_by ni revoked_reason
+      // Guardamos el motivo, quién revocó y el hash de transacción en el campo data (JSONB)
+      final updatedData = Map<String, dynamic>.from(certificate.data);
+      updatedData['revoked_by'] = context.userId;
+      updatedData['revoked_reason'] = reason;
+      updatedData['revoked_at'] = DateTime.now().toIso8601String();
+      if (revocationTransactionHash != null && revocationTransactionHash.isNotEmpty) {
+        updatedData['revocation_transaction_hash'] = revocationTransactionHash;
+      }
+      
       await _client
           .from('certificates')
           .update({
             'status': 'revoked',
             'revoked_at': DateTime.now().toIso8601String(),
-            'revoked_by': context.userId,
-            'revoked_reason': reason,
             'updated_at': DateTime.now().toIso8601String(),
+            'data': updatedData,
           })
           .eq('id', certificateId);
 
+      print('✅ Certificado revocado en base de datos: $certificateId');
+
+      // 3. Enviar notificación por EmailJS
+      try {
+        await CertificateNotificationService.notifyCertificateRevoked(
+          studentEmail: certificate.studentEmail,
+          studentName: certificate.studentName,
+          certificateTitle: certificate.title,
+          institutionName: certificate.institutionName,
+          certificateId: certificateId,
+          reason: reason,
+        );
+        print('✅ Notificación de revocación enviada al estudiante');
+      } catch (e) {
+        print('⚠️ Error enviando notificación (la revocación se completó): $e');
+        // No fallar la revocación si falla la notificación
+      }
+
       return true;
     } catch (e) {
-      print('Error revocando certificado: $e');
+      print('❌ Error revocando certificado: $e');
       return false;
     }
   }

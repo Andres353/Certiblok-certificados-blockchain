@@ -1,10 +1,13 @@
 // lib/screens/emisor/emisor_dashboard.dart
 // Dashboard para emisores con control de permisos por área académica
 
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/user_context_service.dart';
 import '../../services/emisor_permission_service.dart';
 import '../../services/institution_status_service.dart';
+import '../../services/adapters/auth_adapter.dart';
 import '../../widgets/suspended_institution_widget.dart';
 import '../certificates/emit_certificate_screen.dart';
 import '../certificates/my_certificates_screen.dart';
@@ -21,7 +24,6 @@ class EmisorDashboard extends StatefulWidget {
 class _EmisorDashboardState extends State<EmisorDashboard> {
   UserContext? _userContext;
   Map<String, dynamic> _permissions = {};
-  List<Map<String, dynamic>> _allowedStudents = [];
   bool _isLoading = true;
 
   @override
@@ -49,7 +51,6 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
       }
       
       await _loadPermissions();
-      await _loadAllowedStudents();
     }
     
     setState(() {
@@ -64,25 +65,40 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
     });
   }
 
-  Future<void> _loadAllowedStudents() async {
-    if (_userContext?.institutionId == null) return;
-    
-    setState(() => _isLoading = true);
-    
-    try {
-      final students = await EmisorPermissionService.getStudentsForEmisor(
-        institutionId: _userContext!.institutionId!,
-      );
-      
-      setState(() {
-        _allowedStudents = students;
-      });
-    } catch (e) {
-      print('Error cargando estudiantes: $e');
-    } finally {
-      setState(() => _isLoading = false);
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cerrar Sesión'),
+        content: Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // Cerrar sesión y esperar a que se limpie
+      await AuthAdapter.logout();
+      // Esperar un momento para asegurar que la sesión se limpie completamente
+      await Future.delayed(Duration(milliseconds: 300));
+      // Verificar que la sesión esté realmente limpia
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null && mounted) {
+        // Recargar la página para que _getInitialRoute() se ejecute con estado limpio
+        html.window.location.reload();
+      }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +166,13 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
         title: Text('Dashboard de Emisor'),
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            tooltip: 'Cerrar Sesión',
+            onPressed: _logout,
+          ),
+        ],
       ),
       body: _userContext == null
           ? Center(child: CircularProgressIndicator())
@@ -170,11 +193,6 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
                   
                   // Cards de funcionalidades principales
                   _buildFunctionalityCards(),
-                  
-                  SizedBox(height: 24),
-                  
-                  // Lista de estudiantes permitidos
-                  _buildStudentsCard(),
                 ],
               ),
             ),
@@ -502,170 +520,6 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
     );
   }
 
-  Widget _buildStudentsCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-        padding: EdgeInsets.all(20),
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-            children: [
-                Text(
-                  'Estudiantes Disponibles',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xff2E2F44),
-                  ),
-                ),
-                Spacer(),
-                Text(
-                  '${_allowedStudents.length} estudiantes',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 16),
-            
-            if (_isLoading)
-              Center(child: CircularProgressIndicator())
-            else if (_allowedStudents.isEmpty)
-              Container(
-                padding: EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Text(
-                    'No hay estudiantes disponibles para tu área de permisos',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: NeverScrollableScrollPhysics(),
-                itemCount: _allowedStudents.length,
-                itemBuilder: (context, index) {
-                  final student = _allowedStudents[index];
-                  return _buildStudentCard(student);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildStudentCard(Map<String, dynamic> student) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Color(0xff6C4DDC).withOpacity(0.1),
-            child: Text(
-              student['fullName']?.substring(0, 1).toUpperCase() ?? 'S',
-              style: TextStyle(
-                color: Color(0xff6C4DDC),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  student['fullName'] ?? 'Estudiante',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'ID: ${student['studentIdInInstitution'] ?? 'N/A'}',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
-                ),
-                if (student['program'] != null) ...[
-                  SizedBox(height: 2),
-                  Text(
-                    'Programa: ${student['program']}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-                if (student['faculty'] != null) ...[
-                  SizedBox(height: 2),
-                  Text(
-                    'Facultad: ${student['faculty']}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => _emitCertificate(student),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xff6C4DDC),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            child: Text('Emitir'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _emitCertificate(Map<String, dynamic> student) {
-    // Aquí se implementaría la lógica para emitir certificados
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Funcionalidad de emisión de certificados en desarrollo'),
-        backgroundColor: Colors.blue,
-      ),
-    );
-  }
 
   // Métodos de navegación para las funcionalidades
   void _showEmitOptions() {

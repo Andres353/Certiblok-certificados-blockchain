@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:convert';
-import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 // import 'package:pdf_render/pdf_render.dart'; // Comentado temporalmente por compatibilidad con Web
 import '../../services/adapters/certificate_adapter.dart';
@@ -16,6 +15,8 @@ import '../../services/adapters/certificate_template_adapter.dart';
 import '../../services/certificate_notification_service.dart';
 import '../../services/alert_service.dart';
 import '../../models/certificate_template.dart';
+import '../../services/blockchain/blockchain_config.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class EmitCertificateScreen extends StatefulWidget {
   final String? studentId; // Opcional para preseleccionar un estudiante
@@ -33,7 +34,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
   
   bool _isLoading = false;
   bool _isLoadingStudents = true;
-  bool _isLoadingTemplates = true;
+  bool _isLoadingTemplates = false; // No se cargan plantillas, siempre usar certificado personalizado
   List<Map<String, dynamic>> _students = [];
   Map<String, dynamic>? _selectedStudent;
   String _selectedCertificateType = 'graduation';
@@ -127,96 +128,8 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
   }
 
   Future<void> _pickCustomCertificate() async {
-    try {
-      // Mostrar opciones de selección
-      final String? selectedType = await showDialog<String>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Seleccionar tipo de archivo'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: Icon(Icons.image, color: Colors.blue),
-                  title: Text('Imagen'),
-                  subtitle: Text('JPG, PNG, etc.'),
-                  onTap: () => Navigator.pop(context, 'image'),
-                ),
-                ListTile(
-                  leading: Icon(Icons.picture_as_pdf, color: Colors.red),
-                  title: Text('PDF'),
-                  subtitle: Text('Documento PDF'),
-                  onTap: () => Navigator.pop(context, 'pdf'),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Cancelar'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (selectedType == null) return;
-
-      if (selectedType == 'image') {
-        await _pickImage();
-      } else if (selectedType == 'pdf') {
+    // Solo permitir PDFs
         await _pickPdf();
-      }
-    } catch (e) {
-      AlertService.showError(context, 'Error', 'Error cargando certificado: $e');
-    }
-  }
-
-  Future<void> _pickImage() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-      );
-      
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        
-        // Validar tamaño de la imagen (mismo límite que PDFs)
-        const int maxImageSize = 700000; // 700KB para base64
-        if (bytes.length > maxImageSize) {
-          final double sizeInKB = bytes.length / 1024;
-          final double maxSizeInKB = maxImageSize / 1024;
-          
-          AlertService.showError(
-            context, 
-            'Imagen Demasiado Grande', 
-            'La imagen seleccionada es demasiado grande (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl límite máximo es ${maxSizeInKB.toStringAsFixed(1)}KB.\n\nPor favor, comprime la imagen o usa una más pequeña.'
-          );
-          return;
-        }
-        
-        setState(() {
-          _customCertificateBytes = bytes;
-          _customCertificateFileName = image.name;
-          _customCertificateMimeType = 'image/jpeg';
-          _isPdf = false;
-          _useCustomCertificate = true;
-        });
-        
-        // Mostrar confirmación de carga exitosa
-        final double sizeInKB = bytes.length / 1024;
-        AlertService.showSuccess(
-          context, 
-          'Imagen Cargada', 
-          'Imagen cargada exitosamente (${sizeInKB.toStringAsFixed(1)}KB).\n\nLa imagen está lista para ser usada en el certificado.'
-        );
-      }
-    } catch (e) {
-      AlertService.showError(context, 'Error', 'Error cargando imagen: $e');
-    }
   }
 
   Future<void> _pickPdf() async {
@@ -783,10 +696,6 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                                     _buildFormatChip('PDF', Icons.picture_as_pdf, Colors.red),
-                                    SizedBox(width: 8),
-                                    _buildFormatChip('JPG', Icons.image, Colors.blue),
-                                    SizedBox(width: 8),
-                                    _buildFormatChip('PNG', Icons.image, Colors.green),
                                   ],
                                 ),
                               ],
@@ -815,7 +724,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
-                            _isPdf ? Icons.picture_as_pdf : Icons.image,
+                                Icons.picture_as_pdf,
                                 color: Colors.green[700],
                                 size: 28,
                           ),
@@ -843,7 +752,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                       ),
                                       SizedBox(width: 4),
                                       Text(
-                                        _isPdf ? 'Documento PDF' : 'Imagen cargada',
+                                        'Documento PDF',
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: Colors.green[700],
@@ -901,12 +810,7 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
                                 width: 2,
                               ),
                             ),
-                            child: _isPdf 
-                                ? _buildPdfPreview()
-                                : Image.memory(
-                                    _customCertificateBytes!,
-                                    fit: BoxFit.contain,
-                                  ),
+                            child: _buildPdfPreview(),
                           ),
                         ),
                       ),
@@ -1694,8 +1598,17 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
 
       AlertService.showSuccess(context, 'Éxito', 'Certificado emitido exitosamente. El estudiante ha sido notificado por email.');
 
-      // Mostrar información del certificado
-      _showCertificateInfo(certificateId);
+      // Obtener el certificado completo para mostrar el hash de blockchain
+      try {
+        final certificate = await CertificateAdapter.getCertificate(certificateId);
+        final blockchainHash = certificate['blockchain_hash'] ?? certificate['blockchainHash'] ?? '';
+        
+        // Mostrar información del certificado con enlace a PolygonScan
+        _showCertificateInfo(certificateId, blockchainHash);
+      } catch (e) {
+        // Si no se puede obtener el certificado, mostrar sin hash
+        _showCertificateInfo(certificateId, null);
+      }
     } catch (e) {
       AlertService.showError(context, 'Error', 'Error al emitir certificado: $e');
     } finally {
@@ -1703,34 +1616,157 @@ class _EmitCertificateScreenState extends State<EmitCertificateScreen> {
     }
   }
 
-  void _showCertificateInfo(String certificateId) {
+  void _showCertificateInfo(String certificateId, String? blockchainHash) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Certificado Emitido'),
-        content: Column(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 28),
+            SizedBox(width: 8),
+            Expanded(child: Text('Certificado Emitido')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('El certificado ha sido emitido exitosamente.'),
+              Text('El certificado ha sido emitido exitosamente y registrado en blockchain.'),
             SizedBox(height: 16),
-            Text('ID del Certificado:'),
+              Text(
+                'ID del Certificado:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 4),
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.grey[100],
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(
+                child: SelectableText(
                 certificateId,
                 style: TextStyle(
                   fontFamily: 'monospace',
+                    fontSize: 12,
                 ),
               ),
             ),
+              if (blockchainHash != null && blockchainHash.isNotEmpty) ...[
             SizedBox(height: 16),
-            Text('El estudiante recibirá una notificación por email.'),
-          ],
+                Text(
+                  'Transacción Blockchain:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 4),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SelectableText(
+                        blockchainHash,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: Colors.blue[900],
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      InkWell(
+                        onTap: () async {
+                          final cleanHash = blockchainHash.trim().replaceAll(RegExp(r'\s+'), '');
+                          final explorerUrl = BlockchainConfig.explorerUrl;
+                          final transactionUrl = '$explorerUrl/tx/$cleanHash';
+                          
+                          try {
+                            final Uri url = Uri.parse(transactionUrl);
+                            if (await canLaunchUrl(url)) {
+                              await launchUrl(url, mode: LaunchMode.externalApplication);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error al abrir el explorador: $e')),
+                            );
+                          }
+                        },
+                        child: Row(
+                          children: [
+                            Icon(Icons.open_in_new, size: 16, color: Colors.blue[700]),
+                            SizedBox(width: 4),
+                            Text(
+                              'Ver en PolygonScan',
+                              style: TextStyle(
+                                color: Colors.blue[700],
+                                decoration: TextDecoration.underline,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.verified, size: 16, color: Colors.green[700]),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'El certificado está registrado de forma inmutable en la blockchain de Polygon.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green[900],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.email, size: 16, color: Colors.orange[700]),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'El estudiante recibirá una notificación por email.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.orange[900],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

@@ -4,7 +4,7 @@
 import 'package:flutter/material.dart';
 import '../../models/application.dart';
 import '../../services/application_service.dart';
-import '../../services/user_context_service.dart';
+import '../../services/alert_service.dart';
 import 'application_details_screen.dart';
 
 class MyApplicationsScreen extends StatefulWidget {
@@ -34,7 +34,18 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      _showErrorSnackBar('Error al cargar postulaciones: $e');
+      String errorMsg = 'No se pudieron cargar tus postulaciones.';
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('conexión') || errorStr.contains('network') || errorStr.contains('timeout')) {
+        errorMsg = 'Error de conexión. Verifica tu internet.';
+      } else if (errorStr.contains('autenticado') || errorStr.contains('auth')) {
+        errorMsg = 'Sesión expirada. Inicia sesión nuevamente.';
+      }
+      AlertService.showError(
+        context,
+        'Error',
+        errorMsg,
+      );
     }
   }
 
@@ -96,8 +107,6 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
             _buildFilterChip('Todas', 'all'),
             SizedBox(width: 8),
             _buildFilterChip('Pendientes', 'pending'),
-            SizedBox(width: 8),
-            _buildFilterChip('En Revisión', 'under_review'),
             SizedBox(width: 8),
             _buildFilterChip('Aprobadas', 'approved'),
             SizedBox(width: 8),
@@ -412,54 +421,41 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
   }
 
   Future<void> _withdrawApplication(Application application) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Retirar Postulación'),
-        content: Text('¿Estás seguro de que quieres retirar tu postulación a "${application.programTitle}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Retirar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+    AlertService.showConfirmation(
+      context,
+      'Retirar Postulación',
+      '¿Estás seguro de que quieres retirar tu postulación a "${application.programTitle}"?',
+      confirmText: 'Retirar',
+      cancelText: 'Cancelar',
+      onConfirm: () async {
+        try {
+          await ApplicationService.withdrawApplication(application.id);
+          _loadApplications();
+          AlertService.showSuccess(
+            context,
+            'Postulación Retirada',
+            'Tu postulación ha sido retirada exitosamente',
+          );
+        } catch (e) {
+          String errorMsg = 'No se pudo retirar tu postulación.';
+          final errorStr = e.toString().toLowerCase();
+          if (errorStr.contains('conexión') || errorStr.contains('network') || errorStr.contains('timeout')) {
+            errorMsg = 'Error de conexión. Verifica tu internet.';
+          } else if (errorStr.contains('estado') || errorStr.contains('status')) {
+            errorMsg = 'No se puede retirar. El estado de la postulación no lo permite.';
+          }
+          AlertService.showError(
+            context,
+            'Error',
+            errorMsg,
+          );
+        }
+      },
     );
-
-    if (confirmed == true) {
-      try {
-        await ApplicationService.withdrawApplication(application.id);
-        _loadApplications();
-        _showSuccessSnackBar('Postulación retirada exitosamente');
-      } catch (e) {
-        _showErrorSnackBar('Error al retirar postulación: $e');
-      }
-    }
   }
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
 }

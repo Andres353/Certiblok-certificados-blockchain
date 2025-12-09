@@ -22,10 +22,13 @@ class InstitutionRequestAdapter {
     required String address,
     required String city,
     required String country,
+    required String department,
     required String website,
     required String description,
     required String logoUrl,
     required String documents,
+    required String ruc,
+    required String ministerialResolution,
   }) async {
     print('🔍 InstitutionRequestAdapter.createRequest:');
     print('   - _useSupabase: $_useSupabase');
@@ -43,10 +46,13 @@ class InstitutionRequestAdapter {
         address: address,
         city: city,
         country: country,
+        department: department,
         website: website,
         description: description,
         logoUrl: logoUrl,
         documents: documents,
+        ruc: ruc,
+        ministerialResolution: ministerialResolution,
       );
       print('✅ Solicitud creada en Supabase con ID: $result');
       return result;
@@ -62,10 +68,13 @@ class InstitutionRequestAdapter {
         address: address,
         city: city,
         country: country,
+        department: department,
         website: website,
         description: description,
         logoUrl: logoUrl,
         documents: documents,
+        ruc: ruc,
+        ministerialResolution: ministerialResolution,
       );
       print('✅ Solicitud creada en Firebase con ID: $result');
       return result;

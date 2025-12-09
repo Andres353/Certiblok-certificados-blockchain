@@ -2,11 +2,15 @@
 // Pantalla de reportes y estadísticas del sistema
 
 import 'dart:async';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/alert_service.dart';
 import '../../services/adapters/institution_adapter.dart';
 import '../../models/institution.dart';
+import '../../services/blockchain/blockchain_service.dart';
+import '../../services/blockchain/blockchain_config.dart';
+import 'package:web3dart/web3dart.dart';
 
 class ReportsScreen extends StatefulWidget {
   @override
@@ -18,6 +22,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<Institution> _institutions = [];
   Map<String, int> _certificatesByInstitution = {};
   bool _isLoading = true;
+  
+  // Estadísticas de blockchain
+  Map<String, dynamic> _blockchainStats = {};
+  bool _isLoadingBlockchain = false;
 
   @override
   void initState() {
@@ -86,6 +94,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       // Cargar instituciones para obtener nombres
       final institutions = await InstitutionAdapter.getAllInstitutions();
       
+      // Cargar estadísticas de blockchain
+      await _loadBlockchainStats();
+      
       setState(() {
         _stats = {
           'total_users': totalUsers,
@@ -141,6 +152,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   _buildCertificatesByInstitutionChart(),
                   SizedBox(height: 24),
                   _buildRequestsReport(),
+                  SizedBox(height: 24),
+                  _buildBlockchainStats(),
                 ],
               ),
             ),
@@ -521,5 +534,239 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _loadBlockchainStats() async {
+    setState(() => _isLoadingBlockchain = true);
+    
+    try {
+      // Obtener información de la wallet
+      Map<String, String>? walletInfo;
+      EtherAmount? balance;
+      try {
+        final blockchainService = BlockchainService();
+        walletInfo = await blockchainService.getWalletInfo();
+        
+        if (walletInfo != null) {
+          try {
+            await blockchainService.initialize(BlockchainConfig.contractAddress);
+            balance = await blockchainService.getBalance();
+          } catch (e) {
+            print('⚠️ No se pudo obtener balance: $e');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error obteniendo información de wallet: $e');
+      }
+      
+      setState(() {
+        _blockchainStats = {
+          'wallet_address': walletInfo?['address'] ?? 'No configurada',
+          'wallet_configured_by': walletInfo?['configured_by'] ?? 'N/A',
+          'wallet_configured_at': walletInfo?['configured_at'] ?? 'N/A',
+          'balance_matic': balance != null ? balance.getValueInUnit(EtherUnit.ether) : null,
+          'contract_address': BlockchainConfig.contractAddress,
+          'network': BlockchainConfig.useTestnet ? 'Polygon Mumbai Testnet' : 'Polygon Mainnet',
+          'chain_id': BlockchainConfig.chainId,
+          'explorer_url': BlockchainConfig.explorerUrl,
+        };
+        _isLoadingBlockchain = false;
+      });
+      
+    } catch (e) {
+      print('❌ Error cargando estadísticas de blockchain: $e');
+      setState(() {
+        _blockchainStats = {};
+        _isLoadingBlockchain = false;
+      });
+    }
+  }
+
+  Widget _buildBlockchainStats() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.account_balance_wallet, color: Color(0xff6C4DDC), size: 24),
+                SizedBox(width: 12),
+                Text(
+                  'Estadísticas de Blockchain',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff2E2F44),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            
+            if (_isLoadingBlockchain)
+              Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_blockchainStats.isEmpty)
+              Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      Icon(Icons.info_outline, size: 48, color: Colors.grey[400]),
+                      SizedBox(height: 16),
+                      Text(
+                        'No hay estadísticas de blockchain disponibles',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
+              SizedBox(height: 16),
+              
+              // Información de la red
+              Text(
+                'Configuración de Red',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xff2E2F44),
+                ),
+              ),
+              SizedBox(height: 12),
+              _buildBlockchainInfoRow('Red', _blockchainStats['network'] ?? 'N/A'),
+              _buildBlockchainInfoRow('Chain ID', '${_blockchainStats['chain_id'] ?? 'N/A'}'),
+              _buildBlockchainInfoRow('Contrato', _formatAddress(_blockchainStats['contract_address'] ?? 'N/A')),
+              
+              SizedBox(height: 16),
+              Divider(),
+              SizedBox(height: 16),
+              
+              // Información de la wallet
+              Text(
+                'Wallet Blockchain',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xff2E2F44),
+                ),
+              ),
+              SizedBox(height: 12),
+              _buildBlockchainInfoRow('Dirección', _formatAddress(_blockchainStats['wallet_address'] ?? 'No configurada')),
+              if (_blockchainStats['balance_matic'] != null)
+                _buildBlockchainInfoRow(
+                  'Balance',
+                  '${(_blockchainStats['balance_matic'] as double).toStringAsFixed(4)} MATIC',
+                ),
+              _buildBlockchainInfoRow('Configurada por', _blockchainStats['wallet_configured_by'] ?? 'N/A'),
+              
+              SizedBox(height: 16),
+              Divider(),
+              SizedBox(height: 16),
+              
+              // Costos estimados
+              Text(
+                'Costos Estimados',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xff2E2F44),
+                ),
+              ),
+              SizedBox(height: 12),
+              _buildBlockchainInfoRow(
+                'Costo Total Estimado',
+                '${(_blockchainStats['estimated_cost_matic'] as double? ?? 0.0).toStringAsFixed(4)} MATIC',
+              ),
+              _buildBlockchainInfoRow(
+                'Costo por Certificado',
+                '~0.006 MATIC (~\$0.004 USD)',
+              ),
+              
+              SizedBox(height: 16),
+              
+              // Botón para ver en explorador
+              if (_blockchainStats['contract_address'] != null && 
+                  _blockchainStats['contract_address'] != 'N/A' &&
+                  _blockchainStats['explorer_url'] != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final explorerUrl = _blockchainStats['explorer_url'] as String;
+                      final contractAddress = _blockchainStats['contract_address'] as String;
+                      final url = '$explorerUrl/address/$contractAddress';
+                      // Abrir directamente en nueva pestaña
+                      html.window.open(url, '_blank');
+                    },
+                    icon: Icon(Icons.open_in_new, size: 18),
+                    label: Text('Ver Contrato en Polygonscan'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xff6C4DDC),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  Widget _buildBlockchainInfoRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: TextStyle(
+                color: Colors.grey[800],
+                fontSize: 14,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatAddress(String address) {
+    if (address == 'N/A' || address == 'No configurada' || address.isEmpty) {
+      return address;
+    }
+    if (address.length > 10) {
+      return '${address.substring(0, 6)}...${address.substring(address.length - 4)}';
+    }
+    return address;
   }
 }

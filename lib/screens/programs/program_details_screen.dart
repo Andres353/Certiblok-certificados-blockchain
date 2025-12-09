@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:html' as html;
 import 'dart:convert';
 import '../../models/program_opportunity.dart';
@@ -23,6 +24,8 @@ class ProgramDetailsScreen extends StatefulWidget {
 class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
   bool _isLoading = false;
   bool _canApply = false;
+  bool _hasAlreadyApplied = false;
+  String? _applicationStatus;
 
   @override
   void initState() {
@@ -36,23 +39,45 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
     try {
       final context = UserContextService.currentContext;
       if (context != null && context.userRole == 'student') {
+        // Verificar si ya se postuló
+        final supabase = Supabase.instance.client;
+        final existingApplication = await supabase
+            .from('applications')
+            .select('id, status')
+            .eq('program_id', widget.program.id)
+            .eq('student_id', context.userId)
+            .maybeSingle();
+
+        if (existingApplication != null && existingApplication.isNotEmpty) {
+          setState(() {
+            _hasAlreadyApplied = true;
+            _applicationStatus = existingApplication['status'];
+            _canApply = false;
+            _isLoading = false;
+          });
+          return;
+        }
+
         final canApply = await ProgramsAdapter.canStudentApply(
           widget.program.id,
           context.userId,
         );
         setState(() {
           _canApply = canApply;
+          _hasAlreadyApplied = false;
           _isLoading = false;
         });
       } else {
         setState(() {
           _canApply = false;
+          _hasAlreadyApplied = false;
           _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
         _canApply = false;
+        _hasAlreadyApplied = false;
         _isLoading = false;
       });
     }
@@ -303,7 +328,7 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
             _buildInfoRow(
               Icons.people,
               'Cupos disponibles',
-              '${widget.program.currentApplications}/${widget.program.maxApplications}',
+              '${widget.program.approvedApplications ?? 0}/${widget.program.maxApplications}',
               isWeb,
             ),
             _buildInfoRow(
@@ -496,6 +521,64 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
     }
 
     if (!_canApply) {
+      // Si ya se postuló, mostrar mensaje específico
+      if (_hasAlreadyApplied) {
+        String statusText = 'Pendiente';
+        Color statusColor = Colors.orange;
+        IconData statusIcon = Icons.pending;
+
+        if (_applicationStatus == 'approved') {
+          statusText = 'Aprobada';
+          statusColor = Colors.green;
+          statusIcon = Icons.check_circle;
+        } else if (_applicationStatus == 'rejected') {
+          statusText = 'Rechazada';
+          statusColor = Colors.red;
+          statusIcon = Icons.cancel;
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: statusColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: statusColor.withOpacity(0.3)),
+          ),
+          child: Column(
+            children: [
+              Icon(statusIcon, color: statusColor, size: 32),
+              SizedBox(height: 8),
+              Text(
+                'Ya te postulaste a este programa',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[700],
+                ),
+              ),
+              SizedBox(height: 4),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Estado: $statusText',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      // Si no puede aplicar por otras razones
       return Container(
         width: double.infinity,
         padding: EdgeInsets.all(16),
@@ -518,7 +601,7 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
             ),
             SizedBox(height: 4),
             Text(
-              'El programa está cerrado, sin cupos disponibles o ya te postulaste',
+              'El programa está cerrado, sin cupos disponibles o la fecha límite ha pasado',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],

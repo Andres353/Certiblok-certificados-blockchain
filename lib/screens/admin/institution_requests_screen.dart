@@ -553,6 +553,8 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
                         _buildDetailItem('Tipo de Institución', request.getInstitutionTypeLabel(), Icons.business),
                         _buildDetailItem('Descripción', request.description, Icons.description),
                         _buildDetailItem('Sitio Web', request.website.isNotEmpty ? request.website : 'No especificado', Icons.language),
+                        _buildDetailItem('RUC', request.ruc.isNotEmpty ? request.ruc : 'No especificado', Icons.badge),
+                        _buildDetailItem('Resolución Ministerial', request.ministerialResolution.isNotEmpty ? request.ministerialResolution : 'No especificado', Icons.verified),
                       ]),
                       
                       SizedBox(height: 24),
@@ -573,7 +575,9 @@ class _InstitutionRequestsScreenState extends State<InstitutionRequestsScreen>
                       SizedBox(height: 16),
                       _buildDetailCard([
                         _buildDetailItem('Dirección', request.address, Icons.location_on),
-                        _buildDetailItem('Ciudad', '${request.city}, ${request.country}', Icons.place),
+                        _buildDetailItem('Ciudad', request.city, Icons.location_city),
+                        _buildDetailItem('Departamento', request.department.isNotEmpty ? request.department : 'No especificado', Icons.map),
+                        _buildDetailItem('País', request.country, Icons.public),
                       ]),
                       
                       SizedBox(height: 24),

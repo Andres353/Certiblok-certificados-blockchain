@@ -176,47 +176,44 @@ class _AdminEmitCertificateScreenState extends State<AdminEmitCertificateScreen>
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+        allowedExtensions: ['pdf'],
         allowMultiple: false,
       );
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         if (file.bytes != null) {
-          const int maxFileSize = 700000; // 700KB para base64
-          if (file.bytes!.length > maxFileSize) {
+          const int maxPdfSize = 700000; // 700KB para base64
+          if (file.bytes!.length > maxPdfSize) {
             final double sizeInKB = file.bytes!.length / 1024;
-            final double maxSizeInKB = maxFileSize / 1024;
+            final double maxSizeInKB = maxPdfSize / 1024;
             
             AlertService.showError(
               context, 
-              'Archivo Demasiado Grande', 
-              'El archivo seleccionado es demasiado grande (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl límite máximo es ${maxSizeInKB.toStringAsFixed(1)}KB.\n\nPor favor, comprime el archivo manualmente o usa un archivo más pequeño.'
+              'PDF Demasiado Grande', 
+              'El PDF seleccionado es demasiado grande (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl límite máximo es ${maxSizeInKB.toStringAsFixed(1)}KB.\n\nPor favor, comprime el PDF manualmente o usa un archivo más pequeño.\n\nHerramientas recomendadas:\n• SmallPDF.com\n• ILovePDF.com\n• Adobe Acrobat'
             );
             return;
           }
           
-          final String extension = file.extension?.toLowerCase() ?? '';
-          final bool isPdf = extension == 'pdf';
-          
           setState(() {
             _customCertificateBytes = file.bytes;
             _customCertificateFileName = file.name;
-            _customCertificateMimeType = isPdf ? 'application/pdf' : 'image/$extension';
-            _isPdf = isPdf;
+            _customCertificateMimeType = 'application/pdf';
+            _isPdf = true;
           });
           
           // Mostrar confirmación de carga exitosa
           final double sizeInKB = file.bytes!.length / 1024;
           AlertService.showSuccess(
             context, 
-            isPdf ? 'PDF Cargado' : 'Imagen Cargada', 
-            '${isPdf ? 'PDF' : 'Imagen'} cargada exitosamente (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl archivo está listo para ser usado en el certificado.'
+            'PDF Cargado', 
+            'PDF cargado exitosamente (${sizeInKB.toStringAsFixed(1)}KB).\n\nEl archivo está listo para ser usado en el certificado.'
           );
         }
       }
     } catch (e) {
-      AlertService.showError(context, 'Error', 'Error cargando archivo: $e');
+      AlertService.showError(context, 'Error', 'Error cargando PDF: $e');
     }
   }
 
@@ -1228,10 +1225,6 @@ class _AdminEmitCertificateScreenState extends State<AdminEmitCertificateScreen>
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     _buildFormatChip('PDF', Icons.picture_as_pdf, Colors.red),
-                                    SizedBox(width: 8),
-                                    _buildFormatChip('JPG', Icons.image, Colors.blue),
-                                    SizedBox(width: 8),
-                                    _buildFormatChip('PNG', Icons.image, Colors.green),
                                   ],
                                 ),
                               ],
@@ -1260,7 +1253,7 @@ class _AdminEmitCertificateScreenState extends State<AdminEmitCertificateScreen>
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
-                                _isPdf ? Icons.picture_as_pdf : Icons.image,
+                                Icons.picture_as_pdf,
                                 color: Colors.green[700],
                                 size: 28,
                               ),
@@ -1288,7 +1281,7 @@ class _AdminEmitCertificateScreenState extends State<AdminEmitCertificateScreen>
                                       ),
                                       SizedBox(width: 4),
                                       Text(
-                                        _isPdf ? 'Documento PDF' : 'Imagen cargada',
+                                        'Documento PDF',
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: Colors.green[700],
@@ -1346,12 +1339,7 @@ class _AdminEmitCertificateScreenState extends State<AdminEmitCertificateScreen>
                                 width: 2,
                               ),
                             ),
-                            child: _isPdf 
-                                ? _buildPdfPreview()
-                                : Image.memory(
-                                    _customCertificateBytes!,
-                                    fit: BoxFit.contain,
-                                  ),
+                            child: _buildPdfPreview(),
                           ),
                         ),
                       ),

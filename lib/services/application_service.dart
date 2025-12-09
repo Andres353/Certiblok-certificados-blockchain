@@ -9,7 +9,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/application.dart';
 import 'user_context_service.dart';
-import 'programs_opportunities_service.dart';
 import 'supabase/supabase_certificate_service.dart';
 import 'supabase/supabase_programs_service.dart';
 import 'image_upload_service.dart';
@@ -51,10 +50,8 @@ class ApplicationService {
       }
 
       // Verificar que el estudiante puede postularse
-      final canApply = await SupabaseProgramsService.canStudentApply(programId, context.userId);
-      if (!canApply) {
-        throw Exception('No puedes postularte a este programa');
-      }
+      // canStudentApply ahora lanza excepciones específicas en lugar de retornar false
+      await SupabaseProgramsService.canStudentApply(programId, context.userId);
 
       // Subir CV a Firebase Storage
       final cvUrl = await _uploadCV(cvFilePath, cvFileBytes, context.userId, cvFileName);
@@ -316,12 +313,19 @@ class ApplicationService {
   // Obtener postulación por ID
   static Future<Application?> getApplicationById(String applicationId) async {
     try {
-      final doc = await _firestore.collection(_collection).doc(applicationId).get();
-      if (doc.exists) {
-        return Application.fromFirestore(doc.data()!, doc.id);
+      final response = await _supabase
+          .from('applications')
+          .select('*')
+          .eq('id', applicationId)
+          .maybeSingle();
+
+      if (response == null) {
+        return null;
       }
-      return null;
+
+      return Application.fromSupabase(response);
     } catch (e) {
+      print('❌ Error obteniendo postulación: $e');
       throw Exception('Error al obtener postulación: $e');
     }
   }
@@ -634,19 +638,35 @@ Equipo de CertiBlock
 
       // Verificar que se puede retirar
       if (!application.canBeWithdrawn) {
-        throw Exception('Esta postulación no puede ser retirada');
+        throw Exception('Esta postulación no puede ser retirada. Solo puedes retirar postulaciones pendientes o en revisión.');
       }
 
-      await _firestore.collection(_collection).doc(applicationId).update({
-        'status': 'withdrawn',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // Actualizar estado en Supabase
+      final now = DateTime.now().toIso8601String();
+      await _supabase
+          .from('applications')
+          .update({
+            'status': 'withdrawn',
+            'updated_at': now,
+          })
+          .eq('id', applicationId);
 
-      // Decrementar contador de aplicaciones del programa
-      await ProgramsOpportunitiesService.decrementApplicationCount(application.programId);
+      // Decrementar contador de aplicaciones del programa en Supabase
+      try {
+        final program = await SupabaseProgramsService.getProgramById(application.programId);
+        if (program != null && program.currentApplications > 0) {
+          await SupabaseProgramsService.updateProgram(application.programId, {
+            'current_applications': program.currentApplications - 1,
+          });
+        }
+      } catch (e) {
+        print('⚠️ Error decrementando contador de aplicaciones: $e');
+        // No fallar si hay error decrementando el contador
+      }
 
       print('✅ Postulación retirada: $applicationId');
     } catch (e) {
+      print('❌ Error retirando postulación: $e');
       throw Exception('Error al retirar postulación: $e');
     }
   }

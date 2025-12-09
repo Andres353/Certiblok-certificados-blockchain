@@ -1,0 +1,275 @@
+TABLA: institutions
+🔑 id: UUID (PK)
+name: VARCHAR(255) NOT NULL
+short_name: VARCHAR(50) ⚪
+description: TEXT ⚪
+logo_url: TEXT ⚪
+institution_code: VARCHAR(10) UNIQUE NOT NULL
+colors: JSONB ⚪
+settings: JSONB ⚪
+status: VARCHAR(20) DEFAULT 'active' ⚪
+admin_email: VARCHAR(255) ⚪
+admin_name: VARCHAR(255) ⚪
+admin_password_hash: VARCHAR(255) ⚪
+admin_must_change_password: BOOLEAN DEFAULT false ⚪
+admin_is_temporary_password: BOOLEAN DEFAULT false ⚪
+created_by: UUID ⚪ (FK → users.id)
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: users
+🔑 id: UUID (PK)
+email: VARCHAR(255) UNIQUE NOT NULL
+password_hash: VARCHAR(255) NOT NULL
+salt: VARCHAR(255) ⚪
+full_name: VARCHAR(255) NOT NULL
+role: VARCHAR(50) NOT NULL
+🔗 institution_id: UUID ⚪ (FK → institutions.id)
+student_id: VARCHAR(50) ⚪
+program_id: VARCHAR(50) ⚪
+faculty_id: VARCHAR(50) ⚪
+program: VARCHAR(255) ⚪
+faculty: VARCHAR(255) ⚪
+phone: VARCHAR(20) ⚪
+document: VARCHAR(50) ⚪
+birth_date: VARCHAR(20) ⚪
+address: TEXT ⚪
+assignments: JSONB DEFAULT '[]' ⚪
+emisor_type: VARCHAR(50) ⚪
+institution_name: VARCHAR(255) ⚪
+is_verified: BOOLEAN DEFAULT false ⚪
+must_change_password: BOOLEAN DEFAULT false ⚪
+is_temporary_password: BOOLEAN DEFAULT false ⚪
+is_active: BOOLEAN DEFAULT true ⚪
+verification_code: VARCHAR(10) DEFAULT '000000' ⚪
+login_attempts: INTEGER DEFAULT 0 ⚪
+locked_until: TIMESTAMP WITH TIME ZONE ⚪
+last_login: TIMESTAMP WITH TIME ZONE ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: faculties
+🔑 id: UUID (PK)
+name: VARCHAR(255) NOT NULL
+description: TEXT ⚪
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: programs
+🔑 id: UUID (PK)
+name: VARCHAR(255) NOT NULL
+description: TEXT ⚪
+🔗 faculty_id: UUID ⚪ (FK → faculties.id) ON DELETE CASCADE
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE
+program_code: VARCHAR(50) UNIQUE NOT NULL
+is_global: BOOLEAN DEFAULT false ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: certificates
+🔑 id: UUID (PK)
+unique_hash: VARCHAR(255) UNIQUE NOT NULL
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE
+🔗 student_id: UUID (FK → users.id) ON DELETE CASCADE
+certificate_type: VARCHAR(50) NOT NULL
+title: VARCHAR(255) NOT NULL
+description: TEXT ⚪
+qr_code: TEXT ⚪
+status: VARCHAR(20) DEFAULT 'active' ⚪
+issued_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+revoked_at: TIMESTAMP WITH TIME ZONE ⚪
+expires_at: TIMESTAMP WITH TIME ZONE ⚪
+validation_history: JSONB DEFAULT '[]' ⚪
+pdf_url: TEXT ⚪
+🔗 template_id: UUID ⚪ (FK → certificate_templates.id)
+data: JSONB ⚪
+faculty_id: VARCHAR(255) ⚪
+faculty_name: VARCHAR(255) ⚪
+program_id: VARCHAR(255) ⚪
+program_name: VARCHAR(255) ⚪
+student_id_in_institution: VARCHAR(255) ⚪
+issued_by_name: VARCHAR(255) ⚪
+issued_by_role: VARCHAR(50) ⚪
+template_data: JSONB ⚪
+custom_certificate_data: TEXT ⚪
+custom_certificate_filename: VARCHAR(255) ⚪
+custom_certificate_mimetype: VARCHAR(100) ⚪
+is_pdf: BOOLEAN DEFAULT false ⚪
+institution_code: VARCHAR(50) ⚪
+institution_name: VARCHAR(255) ⚪
+issued_by: VARCHAR(255) ⚪
+student_email: VARCHAR(255) ⚪
+student_name: VARCHAR(255) ⚪
+blockchain_hash: TEXT ⚪
+blockchain_network: VARCHAR(50) ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: certificate_templates
+🔑 id: UUID (PK)
+name: VARCHAR(255) NOT NULL
+description: TEXT ⚪
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE
+template_design: JSONB NOT NULL
+template_layout: JSONB NOT NULL
+template_fields: JSONB NOT NULL
+is_active: BOOLEAN DEFAULT true ⚪
+🔗 created_by: UUID ⚪ (FK → users.id) ON DELETE SET NULL
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: student_institutions
+🔑 id: UUID (PK)
+🔗 student_id: UUID (FK → users.id) ON DELETE CASCADE
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE
+🔗 program_id: UUID (FK → programs.id) ON DELETE CASCADE
+status: VARCHAR(20) DEFAULT 'active' ⚪
+joined_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+left_at: TIMESTAMP WITH TIME ZONE ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+UNIQUE(student_id, institution_id)
+
+TABLA: institution_requests
+🔑 id: UUID (PK)
+institution_name: VARCHAR(255) NOT NULL
+short_name: VARCHAR(50) ⚪
+institution_type: VARCHAR(50) ⚪
+contact_name: VARCHAR(255) NOT NULL
+contact_email: VARCHAR(255) NOT NULL
+contact_phone: VARCHAR(20) ⚪
+address: TEXT ⚪
+city: VARCHAR(100) ⚪
+country: VARCHAR(100) ⚪
+website: VARCHAR(255) ⚪
+description: TEXT ⚪
+logo_url: TEXT ⚪
+documents: TEXT ⚪
+status: VARCHAR(20) DEFAULT 'pending' ⚪
+requested_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+🔗 reviewed_by: UUID ⚪ (FK → users.id) ON DELETE SET NULL
+reviewed_at: TIMESTAMP WITH TIME ZONE ⚪
+rejection_reason: TEXT ⚪
+🔗 institution_id: UUID ⚪ (FK → institutions.id) ON DELETE SET NULL
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: password_reset_codes
+🔑 id: UUID (PK)
+🔗 user_id: UUID (FK → users.id) ON DELETE CASCADE
+code: VARCHAR(10) NOT NULL
+expires_at: TIMESTAMP WITH TIME ZONE NOT NULL
+used: BOOLEAN DEFAULT false ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: security_logs
+🔑 id: UUID (PK)
+🔗 user_id: UUID ⚪ (FK → users.id) ON DELETE SET NULL
+event: VARCHAR(50) NOT NULL
+description: TEXT ⚪
+ip_address: VARCHAR(45) ⚪
+user_agent: TEXT ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: page_content
+🔑 id: UUID (PK)
+page_name: VARCHAR(50) UNIQUE NOT NULL
+content: JSONB NOT NULL
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: grouped_qrs
+🔑 id: UUID (PK)
+name: VARCHAR(255) NOT NULL
+qr_url: TEXT NOT NULL
+certificate_ids: TEXT[] NOT NULL
+certificate_titles: TEXT[] NOT NULL
+🔗 student_id: UUID (FK → users.id) ON DELETE CASCADE
+student_name: VARCHAR(255) NOT NULL
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: programs_opportunities
+🔑 id: UUID (PK)
+title: VARCHAR(255) NOT NULL
+description: TEXT ⚪
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE
+institution_name: VARCHAR(255) NOT NULL
+🔗 faculty_id: UUID ⚪ (FK → faculties.id) ON DELETE SET NULL
+faculty_name: VARCHAR(255) ⚪
+career_ids: TEXT[] DEFAULT '{}' ⚪
+career_names: TEXT[] DEFAULT '{}' ⚪
+requirements: TEXT[] DEFAULT '{}' ⚪
+application_deadline: TIMESTAMP WITH TIME ZONE NOT NULL
+max_applications: INTEGER DEFAULT 0 ⚪
+current_applications: INTEGER DEFAULT 0 ⚪
+🔗 created_by: UUID ⚪ (FK → users.id) ON DELETE SET NULL
+created_by_name: VARCHAR(255) ⚪
+additional_info: JSONB DEFAULT '{}' ⚪
+image_url: TEXT ⚪
+pdf_url: TEXT ⚪
+pdf_file_name: VARCHAR(255) ⚪
+pdf_data: TEXT ⚪
+is_active: BOOLEAN DEFAULT true ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+TABLA: applications
+🔑 id: UUID (PK)
+🔗 student_id: UUID (FK → users.id) ON DELETE CASCADE NOT NULL
+student_name: VARCHAR(255) NOT NULL
+student_email: VARCHAR(255) NOT NULL
+🔗 program_id: UUID (FK → programs_opportunities.id) ON DELETE CASCADE NOT NULL
+program_title: VARCHAR(255) NOT NULL
+🔗 institution_id: UUID (FK → institutions.id) ON DELETE CASCADE NOT NULL
+institution_name: VARCHAR(255) NOT NULL
+status: VARCHAR(20) DEFAULT 'pending' ⚪
+cv_url: TEXT ⚪
+cv_file_name: VARCHAR(255) ⚪
+selected_certificates: TEXT[] DEFAULT '{}' ⚪
+certificate_details: JSONB DEFAULT '[]' ⚪
+motivation_letter: TEXT ⚪
+motivation_pdf_data: TEXT ⚪
+motivation_pdf_file_name: VARCHAR(255) ⚪
+additional_documents: JSONB DEFAULT '{}' ⚪
+submitted_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+🔗 reviewed_by: UUID ⚪ (FK → users.id) ON DELETE SET NULL
+reviewed_by_name: VARCHAR(255) ⚪
+reviewed_at: TIMESTAMP WITH TIME ZONE ⚪
+notes: TEXT ⚪
+rejection_reason: TEXT ⚪
+created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW() ⚪
+
+RELACIONES:
+institutions ← users (institution_id)
+institutions ← faculties (institution_id)
+institutions ← programs (institution_id)
+institutions ← certificates (institution_id)
+institutions ← certificate_templates (institution_id)
+institutions ← student_institutions (institution_id)
+institutions ← institution_requests (institution_id)
+institutions ← programs_opportunities (institution_id)
+institutions ← applications (institution_id)
+users ← certificates (student_id)
+users ← certificate_templates (created_by)
+users ← student_institutions (student_id)
+users ← institution_requests (reviewed_by)
+users ← password_reset_codes (user_id)
+users ← security_logs (user_id)
+users ← grouped_qrs (student_id)
+users ← programs_opportunities (created_by)
+users ← applications (student_id, reviewed_by)
+faculties ← programs (faculty_id)
+faculties ← programs_opportunities (faculty_id)
+programs ← student_institutions (program_id)
+certificate_templates ← certificates (template_id)
+programs_opportunities ← applications (program_id)
+
+LEGENDA:
+🔑 = Llave Primaria (PK)
+🔗 = Llave Foránea (FK)
+⚪ = Campo Opcional (NULL permitido)
+
+

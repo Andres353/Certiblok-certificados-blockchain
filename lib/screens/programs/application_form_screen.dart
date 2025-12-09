@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../models/program_opportunity.dart';
 import '../../services/application_service.dart';
 import '../../services/image_upload_service.dart';
+import '../../services/alert_service.dart';
 
 class ApplicationFormScreen extends StatefulWidget {
   final ProgramOpportunity program;
@@ -55,7 +56,18 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      _showErrorSnackBar('Error al cargar certificados: $e');
+      String errorMsg = 'No se pudieron cargar tus certificados.';
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('conexión') || errorStr.contains('network') || errorStr.contains('timeout')) {
+        errorMsg = 'Error de conexión. Verifica tu internet.';
+      } else if (errorStr.contains('autenticado') || errorStr.contains('auth')) {
+        errorMsg = 'Sesión expirada. Inicia sesión nuevamente.';
+      }
+      AlertService.showError(
+        context,
+        'Error',
+        errorMsg,
+      );
     }
   }
 
@@ -95,14 +107,24 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
           _cvFileBytes = file.bytes; // Importante para web
         });
         
-        _showInfoSnackBar('CV seleccionado exitosamente');
         print('✅ CV configurado correctamente');
       } else {
         print('❌ No se seleccionó ningún archivo');
       }
     } catch (e) {
       print('❌ Error al seleccionar CV: $e');
-      _showErrorSnackBar('Error al seleccionar archivo: $e');
+      String errorMsg = 'No se pudo seleccionar el archivo.';
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('formato') || errorStr.contains('extensión') || errorStr.contains('tipo')) {
+        errorMsg = 'Formato de archivo no válido. Usa PDF, DOC o DOCX.';
+      } else if (errorStr.contains('tamaño') || errorStr.contains('size') || errorStr.contains('grande')) {
+        errorMsg = 'El archivo es demasiado grande.';
+      }
+      AlertService.showError(
+        context,
+        'Error',
+        errorMsg,
+      );
     }
   }
 
@@ -132,16 +154,31 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
             _motivationPdfFileName = file.name;
             _isUploadingMotivationPdf = false;
           });
-          
-          _showInfoSnackBar('Carta de motivación subida exitosamente');
         } else {
           setState(() => _isUploadingMotivationPdf = false);
-          _showErrorSnackBar('Error al leer el archivo PDF');
+          AlertService.showError(
+            context,
+            'Error',
+            'No se pudo leer el archivo PDF. Verifica que el archivo no esté dañado.',
+          );
         }
       }
     } catch (e) {
       setState(() => _isUploadingMotivationPdf = false);
-      _showErrorSnackBar('Error al subir carta de motivación: $e');
+      String errorMsg = 'No se pudo subir la carta de motivación.';
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('tamaño') || errorStr.contains('size') || errorStr.contains('grande') || errorStr.contains('demasiado')) {
+        errorMsg = 'El PDF es demasiado grande. El límite es 700KB. Comprime el archivo.';
+      } else if (errorStr.contains('formato') || errorStr.contains('válido') || errorStr.contains('invalid')) {
+        errorMsg = 'Formato de archivo no válido. Solo se aceptan PDFs.';
+      } else if (errorStr.contains('conexión') || errorStr.contains('network') || errorStr.contains('timeout')) {
+        errorMsg = 'Error de conexión. Verifica tu internet.';
+      }
+      AlertService.showError(
+        context,
+        'Error',
+        errorMsg,
+      );
     }
   }
 
@@ -158,12 +195,20 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
     }
 
     if (_cvFileBytes == null && _cvFilePath == null) {
-      _showErrorSnackBar('Debes cargar tu CV');
+      AlertService.showError(
+        context,
+        'CV Requerido',
+        'Debes cargar tu CV para continuar.',
+      );
       return;
     }
 
     if (_motivationPdfData == null) {
-      _showErrorSnackBar('Debes subir tu carta de motivación en PDF');
+      AlertService.showError(
+        context,
+        'Carta de Motivación Requerida',
+        'Debes subir tu carta de motivación en PDF.',
+      );
       return;
     }
 
@@ -183,50 +228,107 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
         motivationPdfFileName: _motivationPdfFileName,
       );
 
-      _showSuccessDialog();
+      AlertService.showSuccess(
+        context,
+        '¡Postulación Enviada!',
+        'Tu postulación ha sido enviada exitosamente.\n\nRecibirás una notificación cuando sea revisada.',
+        onOk: () {
+          Navigator.of(context).pop(); // Volver a la pantalla anterior
+        },
+      );
     } catch (e) {
       setState(() => _isSubmitting = false);
-      _showErrorSnackBar('Error al enviar postulación: $e');
+      String errorMsg = 'No se pudo enviar tu postulación.';
+      final errorStr = e.toString().toLowerCase();
+      
+      // Errores de tamaño de archivo
+      if (errorStr.contains('tamaño') || errorStr.contains('size') || errorStr.contains('grande') || errorStr.contains('demasiado') || errorStr.contains('límite es')) {
+        if (errorStr.contains('cv')) {
+          errorMsg = 'El CV es demasiado grande. El límite es 700KB. Comprime el archivo.';
+        } else if (errorStr.contains('pdf') || errorStr.contains('motivación')) {
+          errorMsg = 'La carta de motivación es demasiado grande. El límite es 700KB. Comprime el PDF.';
+        } else {
+          errorMsg = 'Uno de los archivos es demasiado grande. El límite es 700KB.';
+        }
+      }
+      // Errores de conexión
+      else if (errorStr.contains('conexión') || errorStr.contains('network') || errorStr.contains('timeout') || errorStr.contains('connection')) {
+        errorMsg = 'Error de conexión. Verifica tu internet.';
+      }
+      // Errores de cupos
+      else if (errorStr.contains('cupos') || errorStr.contains('cupo') || errorStr.contains('no hay cupos')) {
+        errorMsg = 'No hay cupos disponibles para este programa.';
+      }
+      // Errores de fecha límite
+      else if (errorStr.contains('fecha') || errorStr.contains('deadline') || errorStr.contains('límite') || errorStr.contains('pasado')) {
+        errorMsg = 'La fecha límite de postulación ha pasado.';
+      }
+      // Errores de postulación duplicada
+      else if (errorStr.contains('ya aplicó') || errorStr.contains('ya se postuló') || errorStr.contains('ya te postulaste')) {
+        errorMsg = 'Ya te postulaste a este programa.';
+      }
+      // Errores de autenticación
+      else if (errorStr.contains('autenticado') || errorStr.contains('auth') || errorStr.contains('sesión') || errorStr.contains('login')) {
+        errorMsg = 'Sesión expirada. Inicia sesión nuevamente.';
+      }
+      // Errores de permisos
+      else if (errorStr.contains('estudiante') || errorStr.contains('student') || errorStr.contains('permisos') || errorStr.contains('permission')) {
+        errorMsg = 'Solo los estudiantes pueden postularse.';
+      }
+      // Errores de programa no encontrado
+      else if (errorStr.contains('programa no encontrado') || errorStr.contains('program not found')) {
+        errorMsg = 'El programa no existe o fue eliminado.';
+      }
+      // Errores de datos incompletos
+      else if (errorStr.contains('incompletos') || errorStr.contains('incomplete') || errorStr.contains('datos del usuario')) {
+        errorMsg = 'Datos incompletos. Cierra sesión y vuelve a iniciar.';
+      }
+      // Errores de programa no activo o no abierto
+      else if (errorStr.contains('no está activo') || errorStr.contains('no está abierto')) {
+        errorMsg = 'El programa no está disponible para postulaciones.';
+      }
+      // Errores de formato de archivo
+      else if (errorStr.contains('formato') || errorStr.contains('format') || errorStr.contains('válido') || errorStr.contains('invalid file')) {
+        errorMsg = 'Formato de archivo no válido. Verifica los archivos.';
+      }
+      // Errores de base de datos
+      else if (errorStr.contains('foreign key') || errorStr.contains('constraint') || errorStr.contains('database') || errorStr.contains('supabase')) {
+        errorMsg = 'Error en la base de datos. Intenta nuevamente.';
+      }
+      // Si no se detecta un error específico, extraer el mensaje del error
+      else {
+        // Extraer el mensaje real del error, removiendo "Exception:" y otros prefijos
+        String cleanError = errorStr;
+        if (cleanError.contains('exception:')) {
+          cleanError = cleanError.split('exception:').last.trim();
+        }
+        if (cleanError.contains('error al crear postulación:')) {
+          cleanError = cleanError.split('error al crear postulación:').last.trim();
+        }
+        if (cleanError.contains('error')) {
+          final parts = cleanError.split('error');
+          if (parts.length > 1) {
+            cleanError = parts.last.trim();
+            if (cleanError.startsWith(':')) {
+              cleanError = cleanError.substring(1).trim();
+            }
+          }
+        }
+        // Si el mensaje limpio es muy largo o contiene detalles técnicos, usar mensaje genérico
+        if (cleanError.length > 100 || cleanError.contains('stack') || cleanError.contains('trace') || cleanError.contains('at ') || cleanError.contains('package:')) {
+          errorMsg = 'Error al enviar la postulación. Verifica tu conexión e intenta nuevamente.';
+        } else if (cleanError.isNotEmpty && cleanError != errorStr) {
+          // Usar el mensaje limpio si es razonable
+          errorMsg = cleanError.substring(0, cleanError.length > 150 ? 150 : cleanError.length);
+        }
+      }
+      
+      AlertService.showError(
+        context,
+        'Error',
+        errorMsg,
+      );
     }
-  }
-
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green, size: 28),
-            SizedBox(width: 12),
-            Text('¡Postulación Enviada!'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Tu postulación ha sido enviada exitosamente.',
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Recibirás una notificación cuando sea revisada.',
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Cerrar dialog
-              Navigator.of(context).pop(); // Volver a la pantalla anterior
-            },
-            child: Text('Entendido'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -1147,22 +1249,4 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
     );
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showInfoSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.blue,
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
 }

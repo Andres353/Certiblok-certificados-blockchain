@@ -201,6 +201,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
             isItalic: false,
             isUnderline: false,
           ),
+          signatureImageUrl: null,
         ),
       ];
     }
@@ -213,12 +214,6 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
         title: Text(widget.template != null ? 'Editar Plantilla' : 'Nueva Plantilla'),
         backgroundColor: Color(0xFF6C4DDC),
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.save),
-            onPressed: _saveTemplate,
-          ),
-        ],
       ),
       body: Row(
         children: [
@@ -568,6 +563,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
                           isVisible: value,
                           position: field.position,
                           style: field.style,
+                          signatureImageUrl: field.signatureImageUrl,
                         );
                       }
                     });
@@ -602,11 +598,87 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
                         isVisible: field.isVisible,
                         position: field.position,
                         style: field.style,
+                        signatureImageUrl: field.signatureImageUrl,
                       );
                     }
                   });
                 },
               ),
+            // Opción para subir imagen de firma digital (solo para tipo signature)
+            if (field.type == 'signature') ...[
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.image, size: 16, color: Colors.blue[700]),
+                        SizedBox(width: 8),
+                        Text(
+                          'Firma Digital',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    if (field.signatureImageUrl != null && field.signatureImageUrl!.isNotEmpty) ...[
+                      Container(
+                        height: 60,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.blue[300]!),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Image.network(
+                          field.signatureImageUrl!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: Icon(Icons.broken_image, color: Colors.grey[600]),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                    ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _uploadSignatureImage(field),
+                            icon: Icon(Icons.upload, size: 16),
+                            label: Text(field.signatureImageUrl != null ? 'Cambiar Imagen' : 'Subir Imagen'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[600],
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                            ),
+                          ),
+                        ),
+                        if (field.signatureImageUrl != null && field.signatureImageUrl!.isNotEmpty) ...[
+                          SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () => _removeSignatureImage(field),
+                            icon: Icon(Icons.delete, color: Colors.red),
+                            tooltip: 'Eliminar imagen',
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             SizedBox(height: 12),
             
             // Color del texto
@@ -641,6 +713,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
                             isItalic: field.style.isItalic,
                             isUnderline: field.style.isUnderline,
                           ),
+                          signatureImageUrl: field.signatureImageUrl,
                         );
                       }
                     });
@@ -698,6 +771,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
                               isItalic: field.style.isItalic,
                               isUnderline: field.style.isUnderline,
                             ),
+                            signatureImageUrl: field.signatureImageUrl,
                           );
                         }
                       });
@@ -877,7 +951,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
       child: ElevatedButton.icon(
         onPressed: _generatePDF,
         icon: Icon(Icons.picture_as_pdf),
-        label: Text('Generar PDF de Vista Previa'),
+        label: Text('Generar PDF'),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.red,
           foregroundColor: Colors.white,
@@ -1074,14 +1148,24 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
   }
 
   Widget _buildPositionedField(TemplateField field) {
+    // Calcular altura del contenedor y posición
+    double containerHeight = field.position.height;
+    double topPosition = field.position.y;
+    
+    if (field.type == 'signature' && field.signatureImageUrl != null && field.signatureImageUrl!.isNotEmpty) {
+      // Aumentar altura para incluir la imagen (80px imagen + 15px espacio + altura original)
+      containerHeight = 80 + 15 + field.position.height;
+      // Mover el contenedor hacia arriba para que la imagen quede más arriba
+      topPosition = field.position.y - 80; // Mover 80px hacia arriba
+    }
+    
     return Positioned(
       left: field.position.x,
-      top: field.position.y,
+      top: topPosition,
       width: field.position.width,
-      height: field.position.height,
       child: Container(
         width: field.position.width,
-        height: field.position.height,
+        height: containerHeight,
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: field.style.backgroundColor != 'transparent' 
@@ -1098,14 +1182,47 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
   Widget _buildFieldContent(TemplateField field) {
     switch (field.type) {
       case 'signature':
+        // Usar Column normal con la imagen arriba y la línea abajo
         return Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: field.style.textAlign == 'right' 
               ? CrossAxisAlignment.end 
               : field.style.textAlign == 'left' 
                   ? CrossAxisAlignment.start 
                   : CrossAxisAlignment.center,
           children: [
-            // Línea de firma
+            // Imagen de firma digital posicionada arriba (si existe)
+            if (field.signatureImageUrl != null && field.signatureImageUrl!.isNotEmpty) ...[
+              Transform.translate(
+                offset: Offset(-10, 0), // Mover 10px a la izquierda (reducido de 20 para moverla más a la derecha)
+                child: Align(
+                  alignment: Alignment.centerLeft, // Alinear a la izquierda
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: field.position.width,
+                      maxHeight: 80,
+                    ),
+                    margin: EdgeInsets.only(bottom: 15), // Más abajo (reducido de 25 a 15 para acercarla a la línea)
+                    child: Image.network(
+                      field.signatureImageUrl!,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: field.position.width,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            border: Border.all(color: Colors.grey[400]!),
+                          ),
+                          child: Icon(Icons.broken_image, color: Colors.grey[600]),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            // Línea de firma - posición fija (no se mueve)
             Container(
               width: field.position.width,
               height: 1,
@@ -1466,6 +1583,88 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
         ),
       );
     }
+  }
+
+  // Función para subir imagen de firma digital
+  Future<void> _uploadSignatureImage(TemplateField field) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        
+        // Leer los bytes del archivo
+        final bytes = file.bytes;
+        if (bytes != null) {
+          // Subir a Firebase Storage
+          final url = await ImageUploadService.uploadImageBytes(
+            bytes,
+            'certificate_signatures/${DateTime.now().millisecondsSinceEpoch}_${file.name}',
+          );
+          
+          setState(() {
+            final index = _currentFields.indexWhere((f) => f.id == field.id);
+            if (index != -1) {
+              _currentFields[index] = TemplateField(
+                id: field.id,
+                type: field.type,
+                label: field.label,
+                value: field.value,
+                order: field.order,
+                isVisible: field.isVisible,
+                position: field.position,
+                style: field.style,
+                signatureImageUrl: url,
+              );
+            }
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Imagen de firma subida exitosamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al subir imagen de firma: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Función para eliminar imagen de firma digital
+  void _removeSignatureImage(TemplateField field) {
+    setState(() {
+      final index = _currentFields.indexWhere((f) => f.id == field.id);
+      if (index != -1) {
+        _currentFields[index] = TemplateField(
+          id: field.id,
+          type: field.type,
+          label: field.label,
+          value: field.value,
+          order: field.order,
+          isVisible: field.isVisible,
+          position: field.position,
+          style: field.style,
+          signatureImageUrl: null,
+        );
+      }
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Imagen de firma eliminada'),
+        backgroundColor: Colors.orange,
+      ),
+    );
   }
 
   @override

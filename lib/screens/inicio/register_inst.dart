@@ -21,10 +21,13 @@ class InstitutionRequest {
   final String address;
   final String city;
   final String country;
+  final String department;
   final String website;
   final String description;
   final String logoUrl;
   final String documents;
+  final String ruc; // RUC (Registro Único de Contribuyente) - Bolivia
+  final String ministerialResolution; // Número de Resolución Ministerial - Bolivia
   final String status;
   final DateTime requestedAt;
   final String? reviewedBy;
@@ -42,10 +45,13 @@ class InstitutionRequest {
     required this.address,
     required this.city,
     required this.country,
+    required this.department,
     required this.website,
     required this.description,
     required this.logoUrl,
     required this.documents,
+    required this.ruc,
+    required this.ministerialResolution,
     this.status = 'pending',
     required this.requestedAt,
     this.reviewedBy,
@@ -64,10 +70,13 @@ class InstitutionRequest {
       'address': address,
       'city': city,
       'country': country,
+      'department': department,
       'website': website,
       'description': description,
       'logoUrl': logoUrl,
       'documents': documents,
+      'ruc': ruc,
+      'ministerialResolution': ministerialResolution,
       'status': status,
       'requestedAt': requestedAt,
       'reviewedBy': reviewedBy,
@@ -88,10 +97,13 @@ class InstitutionRequest {
       address: map['address'] ?? '',
       city: map['city'] ?? '',
       country: map['country'] ?? '',
+      department: map['department'] ?? '',
       website: map['website'] ?? '',
       description: map['description'] ?? '',
       logoUrl: map['logoUrl'] ?? '',
       documents: map['documents'] ?? '',
+      ruc: map['ruc'] ?? '',
+      ministerialResolution: map['ministerialResolution'] ?? '',
       status: map['status'] ?? 'pending',
       requestedAt: (map['requestedAt'] as Timestamp).toDate(),
       reviewedBy: map['reviewedBy'],
@@ -117,10 +129,13 @@ Future<void> registerInstitutionRequest(InstitutionRequest request) async {
       address: request.address,
       city: request.city,
       country: request.country,
+      department: request.department,
       website: request.website,
       description: request.description,
       logoUrl: request.logoUrl,
       documents: request.documents,
+      ruc: request.ruc,
+      ministerialResolution: request.ministerialResolution,
     );
     
     print('Solicitud de institución registrada exitosamente');
@@ -149,14 +164,15 @@ class _RegisterInstState extends State<RegisterInst> {
   final TextEditingController _contactEmailController = TextEditingController();
   final TextEditingController _contactPhoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
   final TextEditingController _countryController = TextEditingController();
   final TextEditingController _websiteController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _logoUrlController = TextEditingController();
+  final TextEditingController _rucController = TextEditingController();
+  final TextEditingController _ministerialResolutionController = TextEditingController();
 
   String _selectedInstitutionType = 'universidad';
-  String _selectedCountry = 'Colombia';
+  String _selectedDepartment = 'La Paz';
   bool _isLoading = false;
 
   final List<String> _institutionTypes = [
@@ -164,21 +180,16 @@ class _RegisterInstState extends State<RegisterInst> {
     'instituto',
   ];
 
-  final List<String> _countries = [
-    'Colombia',
-    'México',
-    'Argentina',
-    'Chile',
-    'Perú',
-    'Ecuador',
-    'Venezuela',
-    'Bolivia',
-    'Uruguay',
-    'Paraguay',
-    'Brasil',
-    'Estados Unidos',
-    'España',
-    'Otro'
+  final List<String> _departments = [
+    'La Paz',
+    'Cochabamba',
+    'Santa Cruz',
+    'Potosí',
+    'Oruro',
+    'Chuquisaca',
+    'Tarija',
+    'Beni',
+    'Pando',
   ];
 
   @override
@@ -190,11 +201,12 @@ class _RegisterInstState extends State<RegisterInst> {
     _contactEmailController.dispose();
     _contactPhoneController.dispose();
     _addressController.dispose();
-    _cityController.dispose();
     _countryController.dispose();
     _websiteController.dispose();
     _descriptionController.dispose();
     _logoUrlController.dispose();
+    _rucController.dispose();
+    _ministerialResolutionController.dispose();
     super.dispose();
   }
 
@@ -284,8 +296,160 @@ class _RegisterInstState extends State<RegisterInst> {
     }
   }
 
+  bool _validateCurrentPage() {
+    // Validar campos según la página actual
+    if (_currentPage == 0) {
+      // Página 1: Información Básica
+      if (_institutionNameController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El nombre completo de la institución es obligatorio',
+        );
+        return false;
+      }
+      if (_institutionNameController.text.trim().length < 3) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'El nombre debe tener al menos 3 caracteres',
+        );
+        return false;
+      }
+      if (_shortNameController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El nombre corto o sigla es obligatorio',
+        );
+        return false;
+      }
+      if (_shortNameController.text.trim().length < 2) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'El nombre corto debe tener al menos 2 caracteres',
+        );
+        return false;
+      }
+      if (_rucController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El RUC es obligatorio',
+        );
+        return false;
+      }
+      if (!RegExp(r'^[0-9]+$').hasMatch(_rucController.text.trim())) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'El RUC solo puede contener números',
+        );
+        return false;
+      }
+      if (_rucController.text.trim().length < 8) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'El RUC debe tener al menos 8 dígitos',
+        );
+        return false;
+      }
+      if (_ministerialResolutionController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El número de resolución ministerial es obligatorio',
+        );
+        return false;
+      }
+      if (_ministerialResolutionController.text.trim().length < 5) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'El número de resolución debe tener al menos 5 caracteres',
+        );
+        return false;
+      }
+      // Validar descripción solo si tiene contenido
+      if (_descriptionController.text.trim().isNotEmpty && 
+          _descriptionController.text.trim().length < 20) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'La descripción debe tener al menos 20 caracteres',
+        );
+        return false;
+      }
+      return true;
+    } else if (_currentPage == 1) {
+      // Página 2: Información de Contacto
+      if (_contactNameController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El nombre del contacto es obligatorio',
+        );
+        return false;
+      }
+      if (_contactEmailController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El correo electrónico es obligatorio',
+        );
+        return false;
+      }
+      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(_contactEmailController.text.trim())) {
+        AlertService.showError(
+          context,
+          'Campo Inválido',
+          'Ingrese un correo electrónico válido',
+        );
+        return false;
+      }
+      if (_contactPhoneController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'El teléfono es obligatorio',
+        );
+        return false;
+      }
+      if (_addressController.text.trim().isEmpty) {
+        AlertService.showError(
+          context,
+          'Campo Requerido',
+          'La dirección es obligatoria',
+        );
+        return false;
+      }
+      // Validar sitio web solo si tiene contenido
+      if (_websiteController.text.trim().isNotEmpty) {
+        final uri = Uri.tryParse(_websiteController.text.trim());
+        if (uri == null || !uri.hasAbsolutePath) {
+          AlertService.showError(
+            context,
+            'Campo Inválido',
+            'Ingrese una URL válida',
+          );
+          return false;
+        }
+      }
+      return true;
+    }
+    // Página 3 no necesita validación (todos los campos son opcionales)
+    return true;
+  }
+
   void _nextPage() {
     if (_currentPage < 2) {
+      // Validar campos del paso actual antes de avanzar
+      if (!_validateCurrentPage()) {
+        return; // No avanzar si hay errores
+      }
+      
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -316,12 +480,15 @@ class _RegisterInstState extends State<RegisterInst> {
           contactEmail: _contactEmailController.text.trim(),
           contactPhone: _contactPhoneController.text.trim(),
           address: _addressController.text.trim(),
-          city: _cityController.text.trim(),
-          country: _selectedCountry,
+          city: '', // Ciudad eliminada del formulario
+          country: 'Bolivia',
+          department: _selectedDepartment,
           website: _websiteController.text.trim(),
           description: _descriptionController.text.trim(),
           logoUrl: _logoUrlController.text.trim(),
           documents: 'pending_upload', // Placeholder
+          ruc: _rucController.text.trim(),
+          ministerialResolution: _ministerialResolutionController.text.trim(),
           requestedAt: DateTime.now(),
         );
 
@@ -410,9 +577,18 @@ class _RegisterInstState extends State<RegisterInst> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Solicitud de Registro Institucional'),
-        backgroundColor: Colors.blue[700],
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -421,24 +597,57 @@ class _RegisterInstState extends State<RegisterInst> {
           // Header personalizado
           const HeaderRegisterInstitution(),
           
-          // Indicador de progreso
+          // Indicador de progreso mejorado
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
             child: Row(
               children: [
                 Expanded(
-                  child: LinearProgressIndicator(
-                    value: (_currentPage + 1) / 3,
-                    backgroundColor: Colors.grey[300],
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[700]!),
-                  ),
-                ),
-                const SizedBox(width: 15),
-                Text(
-                  '${_currentPage + 1}/3',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue[700],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Paso ${_currentPage + 1} de 3',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xff6C4DDC),
+                            ),
+                          ),
+                          Text(
+                            '${((_currentPage + 1) / 3 * 100).toStringAsFixed(0)}%',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xff6C4DDC),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: LinearProgressIndicator(
+                          value: (_currentPage + 1) / 3,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xff6C4DDC)),
+                          minHeight: 8,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -447,52 +656,102 @@ class _RegisterInstState extends State<RegisterInst> {
 
           // Formulario con páginas
           Expanded(
-        child: Form(
-          key: _formKey,
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (page) {
-                  setState(() {
-                    _currentPage = page;
-                  });
-                },
-            children: [
-                  _buildPage1(), // Información básica
-                  _buildPage2(), // Información de contacto
-                  _buildPage3(), // Información adicional
+            child: Container(
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
                 ],
+              ),
+              child: Form(
+                key: _formKey,
+                child: PageView(
+                  controller: _pageController,
+                  physics: NeverScrollableScrollPhysics(), // Deshabilitar scroll manual
+                  onPageChanged: (page) {
+                    setState(() {
+                      _currentPage = page;
+                    });
+                  },
+                  children: [
+                    _buildPage1(), // Información básica
+                    _buildPage2(), // Información de contacto
+                    _buildPage3(), // Información adicional
+                  ],
+                ),
               ),
             ),
           ),
 
-          // Botones de navegación
+          // Botones de navegación mejorados
           Container(
             padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: Offset(0, -2),
+                ),
+              ],
+            ),
             child: Row(
               children: [
                 if (_currentPage > 0)
                   Expanded(
                     child: OutlinedButton(
                       onPressed: _previousPage,
-                      child: const Text('Anterior'),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                        foregroundColor: Color(0xff6C4DDC),
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Anterior',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
                 if (_currentPage > 0) const SizedBox(width: 15),
                 Expanded(
+                  flex: _currentPage < 2 ? 1 : 1,
                   child: _currentPage < 2
                       ? ElevatedButton(
                           onPressed: _nextPage,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue[700],
+                            backgroundColor: Color(0xff6C4DDC),
                             foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                          child: const Text('Siguiente'),
+                          child: const Text(
+                            'Siguiente',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
                         )
                       : ElevatedButton(
                           onPressed: _isLoading ? null : _submitForm,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green[700],
+                            backgroundColor: Color(0xff4CAF50),
                             foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           child: _isLoading
                               ? const SizedBox(
@@ -503,7 +762,10 @@ class _RegisterInstState extends State<RegisterInst> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Text('Enviar Solicitud'),
+                              : const Text(
+                                  'Enviar Solicitud',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
                         ),
                 ),
               ],
@@ -516,26 +778,61 @@ class _RegisterInstState extends State<RegisterInst> {
 
   Widget _buildPage1() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Información Básica de la Institución',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.blue[700],
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xff6C4DDC).withOpacity(0.1), Color(0xff8B7DDC).withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.school, color: Color(0xff6C4DDC), size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Información Básica de la Institución',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff6C4DDC),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           
+          // Nombre completo (ancho completo)
           TextFormField(
             controller: _institutionNameController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Nombre completo de la institución *',
-              hintText: 'Ej: Universidad del Valle',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.school),
+              hintText: 'Ej: Universidad Mayor de San Andrés',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+              prefixIcon: Icon(Icons.school, color: Color(0xff6C4DDC)),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -549,54 +846,101 @@ class _RegisterInstState extends State<RegisterInst> {
           ),
           const SizedBox(height: 16),
 
-          TextFormField(
-            controller: _shortNameController,
-            decoration: const InputDecoration(
-              labelText: 'Nombre corto o sigla *',
-              hintText: 'Ej: UV, UdeA, UIS',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.text_fields),
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'El nombre corto es requerido';
-              }
-              if (value.trim().length < 2) {
-                return 'El nombre corto debe tener al menos 2 caracteres';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-
-          DropdownButtonFormField<String>(
-            value: _selectedInstitutionType,
-            decoration: const InputDecoration(
-              labelText: 'Tipo de institución *',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.category),
-            ),
-            items: _institutionTypes.map((type) {
-              return DropdownMenuItem(
-                value: type,
-                child: Text(_getInstitutionTypeLabel(type)),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedInstitutionType = value!;
-              });
-            },
+          // Nombre corto y Tipo en 2 columnas
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _shortNameController,
+                  decoration: InputDecoration(
+                    labelText: 'Nombre corto o sigla *',
+                    hintText: 'Ej: UMSA',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.text_fields, color: Color(0xff6C4DDC)),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El nombre corto es requerido';
+                    }
+                    if (value.trim().length < 2) {
+                      return 'El nombre corto debe tener al menos 2 caracteres';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedInstitutionType,
+                  decoration: InputDecoration(
+                    labelText: 'Tipo *',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.category, color: Color(0xff6C4DDC)),
+                  ),
+                  items: _institutionTypes.map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Text(_getInstitutionTypeLabel(type)),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedInstitutionType = value!;
+                    });
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
           TextFormField(
             controller: _descriptionController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Descripción de la institución (opcional)',
               hintText: 'Breve descripción de los servicios académicos que ofrece',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.description),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+              prefixIcon: Icon(Icons.description, color: Color(0xff6C4DDC)),
             ),
             maxLines: 3,
             validator: (value) {
@@ -607,113 +951,44 @@ class _RegisterInstState extends State<RegisterInst> {
               return null;
             },
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPage2() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Información de Contacto',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.blue[700],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          TextFormField(
-            controller: _contactNameController,
-            decoration: const InputDecoration(
-              labelText: 'Nombre del contacto principal *',
-              hintText: 'Ej: Juan Pérez',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.person),
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'El nombre del contacto es requerido';
-              }
-              return null;
-            },
-          ),
           const SizedBox(height: 16),
 
-              TextFormField(
-            controller: _contactEmailController,
-            decoration: const InputDecoration(
-              labelText: 'Correo electrónico de contacto *',
-              hintText: 'Ej: admin@universidad.edu.co',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.email),
-            ),
-            keyboardType: TextInputType.emailAddress,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'El correo electrónico es requerido';
-              }
-              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                return 'Ingrese un correo electrónico válido';
-              }
-              return null;
-            },
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-            controller: _contactPhoneController,
-            decoration: const InputDecoration(
-              labelText: 'Teléfono de contacto *',
-              hintText: 'Ej: +57 2 3212100',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.phone),
-            ),
-            keyboardType: TextInputType.phone,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'El teléfono es requerido';
-              }
-              return null;
-            },
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-            controller: _addressController,
-            decoration: const InputDecoration(
-              labelText: 'Dirección *',
-              hintText: 'Ej: Calle 13 #100-00',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.location_on),
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'La dirección es requerida';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-
+          // RUC y Resolución Ministerial en 2 columnas
           Row(
             children: [
               Expanded(
                 child: TextFormField(
-                  controller: _cityController,
-                  decoration: const InputDecoration(
-                    labelText: 'Ciudad *',
-                    hintText: 'Ej: Cali',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.location_city),
+                  controller: _rucController,
+                  decoration: InputDecoration(
+                    labelText: 'RUC *',
+                    hintText: 'Ej: 1234567890123',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.badge, color: Color(0xff6C4DDC)),
+                    helperText: 'Registro Único de Contribuyente',
                   ),
+                  keyboardType: TextInputType.number,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'La ciudad es requerida';
+                      return 'El RUC es requerido';
+                    }
+                    if (!RegExp(r'^[0-9]+$').hasMatch(value.trim())) {
+                      return 'El RUC solo puede contener números';
+                    }
+                    if (value.trim().length < 8) {
+                      return 'El RUC debe tener al menos 8 dígitos';
                     }
                     return null;
                   },
@@ -721,23 +996,147 @@ class _RegisterInstState extends State<RegisterInst> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _selectedCountry,
-                  decoration: const InputDecoration(
-                    labelText: 'País *',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.public),
+                child: TextFormField(
+                  controller: _ministerialResolutionController,
+                  decoration: InputDecoration(
+                    labelText: 'Resolución Ministerial *',
+                    hintText: 'Ej: RES-2024-001234',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.verified, color: Color(0xff6C4DDC)),
+                    helperText: 'Número de resolución',
                   ),
-                  items: _countries.map((country) {
-                    return DropdownMenuItem(
-                      value: country,
-                      child: Text(country),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedCountry = value!;
-                    });
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El número de resolución ministerial es requerido';
+                    }
+                    if (value.trim().length < 5) {
+                      return 'El número de resolución debe tener al menos 5 caracteres';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPage2() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xff6C4DDC).withOpacity(0.1), Color(0xff8B7DDC).withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.contact_mail, color: Color(0xff6C4DDC), size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Información de Contacto',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff6C4DDC),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Nombre del contacto y Email en 2 columnas
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _contactNameController,
+                  decoration: InputDecoration(
+                    labelText: 'Nombre del contacto *',
+                    hintText: 'Ej: Juan Pérez',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.person, color: Color(0xff6C4DDC)),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El nombre del contacto es requerido';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _contactEmailController,
+                  decoration: InputDecoration(
+                    labelText: 'Correo electrónico *',
+                    hintText: 'Ej: admin@umsa.bo',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.email, color: Color(0xff6C4DDC)),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El correo electrónico es requerido';
+                    }
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      return 'Ingrese un correo electrónico válido';
+                    }
+                    return null;
                   },
                 ),
               ),
@@ -745,24 +1144,148 @@ class _RegisterInstState extends State<RegisterInst> {
           ),
           const SizedBox(height: 16),
 
-          TextFormField(
-            controller: _websiteController,
-            decoration: const InputDecoration(
-              labelText: 'Sitio web',
-              hintText: 'Ej: https://www.universidad.edu.co',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.web),
-            ),
-            keyboardType: TextInputType.url,
-            validator: (value) {
-              if (value != null && value.isNotEmpty) {
-                final uri = Uri.tryParse(value);
-                if (uri == null || !uri.hasAbsolutePath) {
-                  return 'Ingrese una URL válida';
-                }
-              }
-              return null;
-            },
+          // Teléfono y Dirección en 2 columnas
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _contactPhoneController,
+                  decoration: InputDecoration(
+                    labelText: 'Teléfono *',
+                    hintText: 'Ej: +591 2 2441555',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.phone, color: Color(0xff6C4DDC)),
+                  ),
+                  keyboardType: TextInputType.phone,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El teléfono es requerido';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _addressController,
+                  decoration: InputDecoration(
+                    labelText: 'Dirección *',
+                    hintText: 'Ej: Av. Villazón Nro. 1995',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.location_on, color: Color(0xff6C4DDC)),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'La dirección es requerida';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Departamento y Sitio web en 2 columnas
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedDepartment,
+                  decoration: InputDecoration(
+                    labelText: 'Departamento *',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.map, color: Color(0xff6C4DDC)),
+                  ),
+                  items: _departments.map((department) {
+                    return DropdownMenuItem(
+                      value: department,
+                      child: Text(department),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedDepartment = value!;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _websiteController,
+                  decoration: InputDecoration(
+                    labelText: 'Sitio web',
+                    hintText: 'Ej: https://www.umsa.bo',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Color(0xff6C4DDC), width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    prefixIcon: Icon(Icons.web, color: Color(0xff6C4DDC)),
+                  ),
+                  keyboardType: TextInputType.url,
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty) {
+                      final uri = Uri.tryParse(value);
+                      if (uri == null || !uri.hasAbsolutePath) {
+                        return 'Ingrese una URL válida';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -771,32 +1294,71 @@ class _RegisterInstState extends State<RegisterInst> {
 
   Widget _buildPage3() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Información Adicional',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.blue[700],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Logo upload section
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
+              gradient: LinearGradient(
+                colors: [Color(0xff6C4DDC).withOpacity(0.1), Color(0xff8B7DDC).withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.add_circle_outline, color: Color(0xff6C4DDC), size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Información Adicional',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff6C4DDC),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Logo upload section mejorado
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.3), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Logo de la Institución',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                Row(
+                  children: [
+                    Icon(Icons.image, color: Color(0xff6C4DDC), size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Logo de la Institución',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Color(0xff6C4DDC),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -839,8 +1401,14 @@ class _RegisterInstState extends State<RegisterInst> {
                       icon: const Icon(Icons.upload),
                       label: const Text('Seleccionar Logo'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[100],
-                        foregroundColor: Colors.blue[700],
+                        backgroundColor: Color(0xff6C4DDC).withOpacity(0.1),
+                        foregroundColor: Color(0xff6C4DDC),
+                        elevation: 0,
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(color: Color(0xff6C4DDC).withOpacity(0.3)),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -862,63 +1430,48 @@ class _RegisterInstState extends State<RegisterInst> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
 
-          TextFormField(
-            controller: _logoUrlController,
-            decoration: const InputDecoration(
-              labelText: 'URL del logo (alternativa)',
-              hintText: 'https://ejemplo.com/logo.png',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.link),
-            ),
-            keyboardType: TextInputType.url,
-            validator: (value) {
-              if (value != null && value.isNotEmpty) {
-                // Permitir URLs HTTP/HTTPS válidas
-                if (value.startsWith('http://') || value.startsWith('https://')) {
-                  final uri = Uri.tryParse(value);
-                  if (uri == null || !uri.hasAbsolutePath) {
-                    return 'Ingrese una URL válida';
-                  }
-                }
-                // Permitir data URLs (Base64) para nuestra solución temporal
-                else if (value.startsWith('data:image/')) {
-                  // Validar que sea una data URL válida
-                  if (!value.contains('base64,')) {
-                    return 'Formato de imagen no válido';
-                  }
-                }
-                // Cualquier otro formato no es válido
-                else {
-                  return 'Ingrese una URL válida o seleccione una imagen';
-                }
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 20),
-
-          // Terms and conditions
+          // Terms and conditions mejorado
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
-              border: Border.all(color: Colors.blue[200]!),
-              borderRadius: BorderRadius.circular(8),
+              gradient: LinearGradient(
+                colors: [Color(0xff6C4DDC).withOpacity(0.08), Color(0xff8B7DDC).withOpacity(0.03)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.3), width: 1.5),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0xff6C4DDC).withOpacity(0.1),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info, color: Colors.blue[700]),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Términos y Condiciones',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[700],
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Color(0xff6C4DDC).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.info, color: Color(0xff6C4DDC), size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Términos y Condiciones',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Color(0xff6C4DDC),
+                        ),
                       ),
                     ),
                   ],

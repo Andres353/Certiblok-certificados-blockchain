@@ -56,18 +56,30 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
       final isEmisor = userContext!.userRole == 'emisor';
       
       if (isEmisor) {
-        // Para emisores: obtener todos los certificados de la institución
-        print('🔍 Cargando certificados para emisor de institución: ${userContext.institutionId}');
-        certificates = (await CertificateAdapter.getCertificates(
-          institutionId: userContext.institutionId,
-        )).cast<Certificate>();
-        print('📋 Certificados encontrados para emisor: ${certificates.length}');
+        // Para emisores: obtener solo los certificados emitidos por este emisor
+        print('🔍 Cargando certificados emitidos por emisor: ${userContext.userId}');
+        final certificatesData = await CertificateAdapter.getCertificatesByEmisor(userContext.userId);
+        certificates = certificatesData.map((data) {
+          if (data is Certificate) {
+            return data;
+          } else {
+            return Certificate.fromSupabase(Map<String, dynamic>.from(data));
+          }
+        }).toList();
+        print('📋 Certificados encontrados emitidos por este emisor: ${certificates.length}');
       } else {
         // Para estudiantes: obtener solo sus certificados
         print('🔍 Cargando certificados para estudiante: ${userContext.userId}');
-        certificates = (await CertificateAdapter.getCertificates(
+        final certificatesData = await CertificateAdapter.getCertificates(
           studentId: userContext.userId,
-        )).cast<Certificate>();
+        );
+        certificates = certificatesData.map((data) {
+          if (data is Certificate) {
+            return data;
+          } else {
+            return Certificate.fromSupabase(Map<String, dynamic>.from(data));
+          }
+        }).toList();
         print('📋 Certificados encontrados para estudiante: ${certificates.length}');
       }
 
@@ -84,6 +96,21 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
 
   List<Certificate> get _filteredCertificates {
     var filtered = _certificates;
+    
+    // Filtrar por estado
+    if (_selectedFilter != 'all') {
+      filtered = filtered.where((cert) {
+        if (_selectedFilter == 'active') {
+          return cert.status.toLowerCase() == 'active';
+        } else if (_selectedFilter == 'revoked') {
+          return cert.status.toLowerCase() == 'revoked';
+        } else if (_selectedFilter == 'expired') {
+          return cert.status.toLowerCase() == 'expired' ||
+                 (cert.expiresAt != null && cert.expiresAt!.isBefore(DateTime.now()));
+        }
+        return true;
+      }).toList();
+    }
     
     // Filtrar por búsqueda
     if (_searchQuery.isNotEmpty) {
@@ -157,7 +184,6 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                             setState(() {
                               _selectedFilter = filter['value']!;
                             });
-                            _loadCertificates();
                           },
                           selectedColor: Color(0xff6C4DDC).withOpacity(0.2),
                           checkmarkColor: Color(0xff6C4DDC),
@@ -514,13 +540,24 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  void _viewCertificate(Certificate certificate) {
-    Navigator.push(
+  void _viewCertificate(Certificate certificate) async {
+    final userContext = UserContextService.currentContext;
+    final isEmisor = userContext?.userRole == 'emisor';
+    
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CertificateDetailScreen(certificate: certificate),
+        builder: (context) => CertificateDetailScreen(
+          certificate: certificate,
+          isAdminView: isEmisor, // Emisores pueden revocar certificados
+        ),
       ),
     );
+    
+    // Si se revocó un certificado, recargar la lista
+    if (result == true) {
+      _loadCertificates();
+    }
   }
 
   // Los estudiantes NO pueden revocar certificados

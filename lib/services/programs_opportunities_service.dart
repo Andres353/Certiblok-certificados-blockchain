@@ -360,8 +360,8 @@ class ProgramsOpportunitiesService {
       // Verificar que el programa esté abierto
       if (!program.isOpenForApplications) return false;
 
-      // Verificar que haya cupos disponibles
-      if (!program.hasAvailableSlots) return false;
+      // NOTA: No verificamos cupos aquí porque los cupos solo se validan al APROBAR postulaciones
+      // Los estudiantes pueden postularse ilimitadamente, pero solo se pueden aprobar hasta maxApplications
 
       // Verificar que el estudiante no haya postulado previamente
       final applicationQuery = await _firestore

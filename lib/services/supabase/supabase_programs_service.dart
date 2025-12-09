@@ -16,8 +16,30 @@ class SupabaseProgramsService {
           .select('*')
           .order('created_at', ascending: false);
       
-      return response.map((data) => ProgramOpportunity.fromSupabase(data)).toList();
+      // Contar aplicaciones aprobadas para cada programa
+      final programs = <ProgramOpportunity>[];
+      for (var data in response) {
+        final programId = data['id'] as String;
+        
+        // Contar aplicaciones aprobadas
+        final approvedCountResponse = await _client
+            .from('applications')
+            .select('id')
+            .eq('program_id', programId)
+            .eq('status', 'approved');
+        
+        final approvedCount = (approvedCountResponse as List).length;
+        
+        // Agregar el conteo de aprobadas al mapa de datos
+        final programData = Map<String, dynamic>.from(data);
+        programData['approved_applications'] = approvedCount;
+        
+        programs.add(ProgramOpportunity.fromSupabase(programData));
+      }
+      
+      return programs;
     } catch (e) {
+      print('❌ Error obteniendo programas: $e');
       return [];
     }
   }
@@ -100,7 +122,7 @@ class SupabaseProgramsService {
 
       if (programResponse == null || programResponse.isEmpty) {
         print('❌ Programa no encontrado con ID: $programId');
-        return false;
+        throw Exception('Programa no encontrado');
       }
 
       print('📋 Programa encontrado: ${programResponse['title'] ?? 'Sin título'}');
@@ -110,29 +132,45 @@ class SupabaseProgramsService {
       // Verificar si el programa está activo y abierto
       if (!program.isActive) {
         print('⚠️ Programa no está activo');
-        return false;
+        throw Exception('El programa no está activo');
       }
       
       if (!program.isOpenForApplications) {
         print('⚠️ Programa no está abierto para postulaciones');
-        return false;
+        throw Exception('El programa no está abierto para postulaciones');
       }
 
       // Verificar si la fecha límite no ha pasado
       if (program.applicationDeadline.isBefore(DateTime.now())) {
         print('⚠️ Fecha límite de postulación ha pasado');
-        return false;
+        throw Exception('La fecha límite de postulación ha pasado');
       }
 
-      // Verificar si el estudiante ya aplicó (esto se puede implementar más adelante)
-      // Por ahora, permitir que todos los estudiantes apliquen si cumplen los requisitos básicos
+      // NOTA: No verificamos cupos aquí porque los cupos solo se validan al APROBAR postulaciones
+      // Los estudiantes pueden postularse ilimitadamente, pero solo se pueden aprobar hasta maxApplications
+
+      // Verificar si el estudiante ya aplicó a este programa
+      final existingApplication = await _client
+          .from('applications')
+          .select('id, status')
+          .eq('program_id', programId)
+          .eq('student_id', studentId)
+          .maybeSingle();
+
+      if (existingApplication != null && existingApplication.isNotEmpty) {
+        final status = existingApplication['status'] ?? 'pending';
+        print('⚠️ El estudiante ya se postuló a este programa');
+        print('   Estado de la postulación: $status');
+        throw Exception('Ya te postulaste a este programa');
+      }
       
       print('✅ Estudiante puede aplicar al programa');
       return true;
     } catch (e, stackTrace) {
       print('❌ Error verificando elegibilidad: $e');
       print('Stack trace: $stackTrace');
-      return false;
+      // Re-lanzar la excepción para que el mensaje específico se propague
+      rethrow;
     }
   }
 
@@ -167,7 +205,28 @@ class SupabaseProgramsService {
           .eq('institution_id', institutionId)
           .order('created_at', ascending: false);
 
-      return response.map((data) => ProgramOpportunity.fromSupabase(data)).toList();
+      // Contar aplicaciones aprobadas para cada programa
+      final programs = <ProgramOpportunity>[];
+      for (var data in response) {
+        final programId = data['id'] as String;
+        
+        // Contar aplicaciones aprobadas
+        final approvedCountResponse = await _client
+            .from('applications')
+            .select('id')
+            .eq('program_id', programId)
+            .eq('status', 'approved');
+        
+        final approvedCount = (approvedCountResponse as List).length;
+        
+        // Agregar el conteo de aprobadas al mapa de datos
+        final programData = Map<String, dynamic>.from(data);
+        programData['approved_applications'] = approvedCount;
+        
+        programs.add(ProgramOpportunity.fromSupabase(programData));
+      }
+
+      return programs;
     } catch (e) {
       print('❌ Error obteniendo programas por institución: $e');
       return [];
@@ -185,7 +244,20 @@ class SupabaseProgramsService {
           .eq('id', programId)
           .single();
 
-      return ProgramOpportunity.fromSupabase(response);
+      // Contar aplicaciones aprobadas
+      final approvedCountResponse = await _client
+          .from('applications')
+          .select('id')
+          .eq('program_id', programId)
+          .eq('status', 'approved');
+      
+      final approvedCount = (approvedCountResponse as List).length;
+      
+      // Agregar el conteo de aprobadas al mapa de datos
+      final programData = Map<String, dynamic>.from(response);
+      programData['approved_applications'] = approvedCount;
+
+      return ProgramOpportunity.fromSupabase(programData);
     } catch (e) {
       print('❌ Error obteniendo programa: $e');
       return null;

@@ -19,10 +19,13 @@ class InstitutionRequestService {
     required String address,
     required String city,
     required String country,
+    required String department,
     required String website,
     required String description,
     required String logoUrl,
     required String documents,
+    required String ruc,
+    required String ministerialResolution,
   }) async {
     try {
       final docRef = await FirebaseFirestore.instance
@@ -37,10 +40,13 @@ class InstitutionRequestService {
         'address': address,
         'city': city,
         'country': country,
+        'department': department,
         'website': website,
         'description': description,
         'logoUrl': logoUrl,
         'documents': documents,
+        'ruc': ruc,
+        'ministerialResolution': ministerialResolution,
         'status': 'pending',
         'requestedAt': FieldValue.serverTimestamp(),
       });
@@ -370,10 +376,13 @@ class InstitutionRequest {
   final String address;
   final String city;
   final String country;
+  final String department;
   final String website;
   final String description;
   final String logoUrl;
   final String documents;
+  final String ruc;
+  final String ministerialResolution;
   final String status;
   final DateTime requestedAt;
   final String? reviewedBy;
@@ -392,10 +401,13 @@ class InstitutionRequest {
     required this.address,
     required this.city,
     required this.country,
+    required this.department,
     required this.website,
     required this.description,
     required this.logoUrl,
     required this.documents,
+    required this.ruc,
+    required this.ministerialResolution,
     this.status = 'pending',
     required this.requestedAt,
     this.reviewedBy,
@@ -415,10 +427,13 @@ class InstitutionRequest {
       'address': address,
       'city': city,
       'country': country,
+      'department': department,
       'website': website,
       'description': description,
       'logoUrl': logoUrl,
       'documents': documents,
+      'ruc': ruc,
+      'ministerialResolution': ministerialResolution,
       'status': status,
       'requestedAt': requestedAt,
       'reviewedBy': reviewedBy,
@@ -440,10 +455,13 @@ class InstitutionRequest {
       address: map['address'] ?? '',
       city: map['city'] ?? '',
       country: map['country'] ?? '',
+      department: map['department'] ?? '',
       website: map['website'] ?? '',
       description: map['description'] ?? '',
       logoUrl: map['logo_url'] ?? '',
       documents: map['documents'] ?? '',
+      ruc: map['ruc'] ?? '',
+      ministerialResolution: map['ministerial_resolution'] ?? '',
       status: map['status'] ?? 'pending',
       requestedAt: map['requested_at'] != null 
           ? DateTime.parse(map['requested_at'])
@@ -469,10 +487,13 @@ class InstitutionRequest {
       address: map['address'] ?? '',
       city: map['city'] ?? '',
       country: map['country'] ?? '',
+      department: map['department'] ?? '',
       website: map['website'] ?? '',
       description: map['description'] ?? '',
       logoUrl: map['logoUrl'] ?? '',
       documents: map['documents'] ?? '',
+      ruc: map['ruc'] ?? '',
+      ministerialResolution: map['ministerialResolution'] ?? '',
       status: map['status'] ?? 'pending',
       requestedAt: (map['requestedAt'] as Timestamp).toDate(),
       reviewedBy: map['reviewedBy'],

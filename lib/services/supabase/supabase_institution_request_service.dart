@@ -28,10 +28,13 @@ class SupabaseInstitutionRequestService {
     required String address,
     required String city,
     required String country,
+    required String department,
     required String website,
     required String description,
     required String logoUrl,
     required String documents,
+    required String ruc,
+    required String ministerialResolution,
   }) async {
     try {
       final response = await _client.from(_collection).insert({
@@ -44,10 +47,13 @@ class SupabaseInstitutionRequestService {
         'address': address,
         'city': city,
         'country': country,
+        'department': department,
         'website': website,
         'description': description,
         'logo_url': logoUrl,
         'documents': documents,
+        'ruc': ruc,
+        'ministerial_resolution': ministerialResolution,
         'status': 'pending',
         'requested_at': DateTime.now().toIso8601String(),
         'created_at': DateTime.now().toIso8601String(),

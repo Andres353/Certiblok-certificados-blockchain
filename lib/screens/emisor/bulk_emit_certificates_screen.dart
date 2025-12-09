@@ -9,6 +9,8 @@ import '../../services/adapters/certificate_adapter.dart';
 import '../../services/alert_service.dart';
 import '../../services/user_context_service.dart';
 import '../../services/certificate_notification_service.dart';
+import '../../services/blockchain/blockchain_config.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class BulkEmitCertificatesScreen extends StatefulWidget {
   const BulkEmitCertificatesScreen({Key? key}) : super(key: key);
@@ -25,6 +27,7 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
   String _selectedCertificateType = 'graduation';
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   
   // Variables para diseño de PDF personalizado
   Map<String, Map<String, dynamic>> _studentCustomCertificates = {}; // studentId -> certificateData
@@ -40,12 +43,17 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
   void initState() {
     super.initState();
     _loadStudents();
+    // Agregar listener al controlador del título para actualizar el botón en tiempo real
+    _titleController.addListener(() {
+      setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -191,15 +199,35 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
       }
       
       if (studentsWithPdf == _selectedStudentIds.length) {
-      return 'Emitir ${_selectedStudentIds.length} Certificado${_selectedStudentIds.length > 1 ? 's' : ''}';
+      return 'Emitir Certificado${_selectedStudentIds.length > 1 ? 's' : ''}';
       } else {
       return 'Cargar PDFs faltantes (${studentsWithPdf}/${_selectedStudentIds.length})';
     }
   }
 
+  // Getter para estudiantes filtrados
+  List<Map<String, dynamic>> get _filteredStudents {
+    final searchQuery = _searchController.text.toLowerCase().trim();
+    if (searchQuery.isEmpty) {
+      return _students;
+    }
+    return _students.where((student) {
+      final fullName = (student['fullName'] ?? student['full_name'] ?? '').toString().toLowerCase();
+      final email = (student['email'] ?? '').toString().toLowerCase();
+      return fullName.contains(searchQuery) || email.contains(searchQuery);
+    }).toList();
+  }
+
   void _selectAllStudents() {
     setState(() {
-      _selectedStudentIds = _students.map((s) => s['id'] as String).toList();
+      // Filtrar estudiantes basándose en la búsqueda actual
+      final filteredStudents = _filteredStudents;
+      // Agregar todos los estudiantes filtrados a la selección
+      for (var student in filteredStudents) {
+        if (!_selectedStudentIds.contains(student['id'])) {
+          _selectedStudentIds.add(student['id'] as String);
+        }
+      }
     });
   }
 
@@ -237,6 +265,7 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
       int emailSentCount = 0;
       int emailErrorCount = 0;
       List<String> errors = [];
+      List<Map<String, String>> blockchainHashes = []; // Lista para almacenar hashes: [{studentName, hash}]
 
       // Emitir certificados uno por uno
       for (String studentId in _selectedStudentIds) {
@@ -275,6 +304,20 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
             data: certificateData,
             institutionId: userContext.institutionId,
           );
+
+          // Obtener el hash de blockchain del certificado
+          try {
+            final certificate = await CertificateAdapter.getCertificate(certificateId);
+            final blockchainHash = certificate['blockchain_hash'] ?? certificate['blockchainHash'] ?? '';
+            if (blockchainHash.isNotEmpty) {
+              blockchainHashes.add({
+                'studentName': student['fullName'],
+                'hash': blockchainHash,
+              });
+            }
+          } catch (e) {
+            print('⚠️ No se pudo obtener hash de blockchain para ${student['fullName']}: $e');
+          }
 
           successCount++;
 
@@ -328,6 +371,11 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
           'Éxito', 
           resultMessage
         );
+        
+        // Mostrar diálogo con enlaces de PolygonScan si hay hashes
+        if (blockchainHashes.isNotEmpty) {
+          _showBlockchainHashesDialog(blockchainHashes);
+        }
         
         // Limpiar formulario
         _titleController.clear();
@@ -505,9 +553,54 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
             ),
         ],
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator())
-          : _buildContent(),
+      body: Stack(
+        children: [
+          // Contenido principal
+          _isLoading
+              ? Center(child: CircularProgressIndicator())
+              : _buildContent(),
+          
+          // Indicador de carga durante la emisión (centrado en la página)
+          if (_isEmitting)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: Center(
+                child: Container(
+                  padding: EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xff6C4DDC)),
+                        strokeWidth: 3,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Emitiendo certificados...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xff2E2F44),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -599,6 +692,9 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
               labelText: 'Título del Certificado *',
               border: OutlineInputBorder(),
             ),
+            onChanged: (value) {
+              setState(() {}); // Actualizar el botón en tiempo real
+            },
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
                 return 'El título es obligatorio';
@@ -624,6 +720,8 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
   }
 
   Widget _buildStudentsList() {
+    final filteredStudents = _filteredStudents;
+    
     return Column(
       children: [
         // Header con controles
@@ -633,17 +731,47 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
             color: Colors.white,
             border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
           ),
-          child: Row(
+          child: Column(
             children: [
-              Text(
-                'Seleccionar Estudiantes (${_selectedStudentIds.length}/${_students.length})',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Text(
+                    'Seleccionar Estudiantes (${_selectedStudentIds.length}/${_students.length})',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Spacer(),
+                  TextButton.icon(
+                    onPressed: _selectAllStudents,
+                    icon: Icon(Icons.select_all, size: 16),
+                    label: Text('Seleccionar Todo'),
+                  ),
+                ],
               ),
-              Spacer(),
-              TextButton.icon(
-                onPressed: _selectAllStudents,
-                icon: Icon(Icons.select_all, size: 16),
-                label: Text('Seleccionar Todo'),
+              SizedBox(height: 12),
+              // Barra de búsqueda
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Buscar por nombre o email...',
+                  prefixIcon: Icon(Icons.search),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear),
+                          onPressed: () {
+                            setState(() {
+                              _searchController.clear();
+                            });
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (value) {
+                  setState(() {});
+                },
               ),
             ],
           ),
@@ -651,10 +779,26 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
         
         // Lista de estudiantes
         Expanded(
-          child: ListView.builder(
-            itemCount: _students.length,
-            itemBuilder: (context, index) {
-              final student = _students[index];
+          child: filteredStudents.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+                      SizedBox(height: 16),
+                      Text(
+                        _searchController.text.isNotEmpty
+                            ? 'No se encontraron estudiantes'
+                            : 'No hay estudiantes disponibles',
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: filteredStudents.length,
+                  itemBuilder: (context, index) {
+                    final student = filteredStudents[index];
               final isSelected = _selectedStudentIds.contains(student['id']);
               
               return Card(
@@ -883,6 +1027,140 @@ class _BulkEmitCertificatesScreenState extends State<BulkEmitCertificatesScreen>
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBlockchainHashesDialog(List<Map<String, String>> blockchainHashes) {
+    final explorerUrl = BlockchainConfig.explorerUrl;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.link, color: Colors.blue[700], size: 28),
+            SizedBox(width: 8),
+            Expanded(child: Text('Transacciones Blockchain')),
+          ],
+        ),
+        content: Container(
+          width: double.maxFinite,
+          constraints: BoxConstraints(maxHeight: 400),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Los siguientes certificados fueron registrados en blockchain:',
+                  style: TextStyle(fontSize: 14),
+                ),
+                SizedBox(height: 16),
+                ...blockchainHashes.map((item) {
+                  final cleanHash = item['hash']!.trim().replaceAll(RegExp(r'\s+'), '');
+                  final transactionUrl = '$explorerUrl/tx/$cleanHash';
+                  
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['studentName']!,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: Colors.blue[900],
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          SelectableText(
+                            cleanHash,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 10,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          InkWell(
+                            onTap: () async {
+                              try {
+                                final Uri url = Uri.parse(transactionUrl);
+                                if (await canLaunchUrl(url)) {
+                                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
+                                  );
+                                }
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error al abrir el explorador: $e')),
+                                );
+                              }
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.open_in_new, size: 14, color: Colors.blue[700]),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Ver en PolygonScan',
+                                  style: TextStyle(
+                                    color: Colors.blue[700],
+                                    decoration: TextDecoration.underline,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.verified, size: 14, color: Colors.green[700]),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Todos los certificados están registrados de forma inmutable en la blockchain de Polygon.',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.green[900],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cerrar'),
           ),
         ],
       ),

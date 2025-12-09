@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/program_opportunity.dart';
 import '../../services/adapters/programs_adapter.dart';
 import '../../services/user_context_service.dart';
+import '../../services/alert_service.dart';
 import 'program_details_screen.dart';
 
 class ProgramsOpportunitiesScreen extends StatefulWidget {
@@ -61,11 +62,26 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
       });
       
       if (availablePrograms.isEmpty) {
-        _showInfoSnackBar('No hay pasantías disponibles para tu carrera');
+        AlertService.showInfo(
+          this.context,
+          'Sin Pasantías',
+          'No hay pasantías disponibles para tu carrera en este momento',
+        );
       }
     } catch (e) {
       setState(() => _isLoading = false);
-      _showErrorSnackBar('Error al cargar pasantías: $e');
+      String errorMsg = 'No se pudieron cargar las pasantías.';
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('autenticado') || errorStr.contains('usuario no autenticado')) {
+        errorMsg = 'Sesión expirada. Inicia sesión nuevamente.';
+      } else if (errorStr.contains('conexión') || errorStr.contains('network') || errorStr.contains('timeout')) {
+        errorMsg = 'Error de conexión. Verifica tu internet.';
+      }
+      AlertService.showError(
+        this.context,
+        'Error',
+        errorMsg,
+      );
     }
   }
 
@@ -377,7 +393,7 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
                           ),
                         ),
                         child: Text(
-                          '${program.currentApplications}/${program.maxApplications}',
+                          '${program.approvedApplications ?? 0}/${program.maxApplications}',
                           style: TextStyle(
                             fontSize: 11,
                             color: Color(0xff6C4DDC),
@@ -468,21 +484,4 @@ class _ProgramsOpportunitiesScreenState extends State<ProgramsOpportunitiesScree
     );
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showInfoSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.blue,
-      ),
-    );
-  }
 }

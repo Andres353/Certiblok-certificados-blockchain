@@ -10,6 +10,8 @@ import '../../services/adapters/certificate_adapter.dart';
 import '../../services/alert_service.dart';
 import '../../services/user_context_service.dart';
 import '../../services/certificate_notification_service.dart';
+import '../../services/blockchain/blockchain_config.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminBulkEmitCertificatesScreen extends StatefulWidget {
   const AdminBulkEmitCertificatesScreen({Key? key}) : super(key: key);
@@ -326,6 +328,7 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
       int emailSentCount = 0;
       int emailErrorCount = 0;
       List<String> errors = [];
+      List<Map<String, String>> blockchainHashes = []; // Lista para almacenar hashes: [{studentName, hash}]
 
       // Emitir certificados uno por uno
       for (String studentId in _selectedStudentIds) {
@@ -364,6 +367,20 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
             data: certificateData,
             institutionId: userContext?.institutionId,
           );
+
+          // Obtener el hash de blockchain del certificado
+          try {
+            final certificate = await CertificateAdapter.getCertificate(certificateId);
+            final blockchainHash = certificate['blockchain_hash'] ?? certificate['blockchainHash'] ?? '';
+            if (blockchainHash.isNotEmpty) {
+              blockchainHashes.add({
+                'studentName': student['fullName'],
+                'hash': blockchainHash,
+              });
+            }
+          } catch (e) {
+            print('⚠️ No se pudo obtener hash de blockchain para ${student['fullName']}: $e');
+          }
 
           successCount++;
 
@@ -417,6 +434,11 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
           'Éxito', 
           resultMessage
         );
+        
+        // Mostrar diálogo con enlaces de PolygonScan si hay hashes
+        if (blockchainHashes.isNotEmpty) {
+          _showBlockchainHashesDialog(blockchainHashes);
+        }
         
         // Limpiar formulario
         _titleController.clear();
@@ -607,11 +629,14 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
         // Selector de carrera
         _buildCareerSelector(),
         
-        // Formulario de certificado
+        // Formulario de certificado (visible completo)
         _buildCertificateForm(),
         
-        // Lista de estudiantes
-        Expanded(child: _buildStudentsList()),
+        // Lista de estudiantes (más espacio)
+        Expanded(
+          flex: 5,
+          child: _buildStudentsList(),
+        ),
         
         // Botón de emisión
         _buildEmitButton(),
@@ -732,26 +757,33 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
 
   Widget _buildCertificateForm() {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.grey[50],
         border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'Configuración del Certificado',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-          SizedBox(height: 16),
+          SizedBox(height: 12),
           
-          // Tipo de certificado
-          DropdownButtonFormField<String>(
+          // Fila: Tipo de certificado y Título
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<String>(
             value: _selectedCertificateType,
             decoration: InputDecoration(
               labelText: 'Tipo de Certificado',
               border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    isDense: true,
             ),
             items: _certificateTypes.map((type) {
               return DropdownMenuItem(
@@ -765,43 +797,17 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
               });
             },
           ),
-          
-          SizedBox(height: 16),
-          
-          // Información sobre PDF personalizado (siempre requerido)
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.blue[200]!),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
-                SizedBox(width: 8),
+              ),
+              SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    'Para emitir certificados, deberás cargar un archivo PDF para cada estudiante seleccionado en la lista de abajo. Formatos soportados: PDF (máx. 700KB).',
-                    style: TextStyle(
-                      color: Colors.blue[700],
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          SizedBox(height: 16),
-          
-          // Título
-          TextFormField(
+                flex: 3,
+                child: TextFormField(
             controller: _titleController,
             decoration: InputDecoration(
               labelText: 'Título del Certificado *',
               border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    isDense: true,
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -809,18 +815,51 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
               }
               return null;
             },
+                ),
+              ),
+            ],
           ),
           
-          SizedBox(height: 16),
+          SizedBox(height: 12),
           
-          // Descripción (opcional)
+          // Descripción (opcional) - más compacta
           TextFormField(
             controller: _descriptionController,
             decoration: InputDecoration(
               labelText: 'Descripción (opcional)',
               border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              isDense: true,
             ),
-            maxLines: 3,
+            maxLines: 2,
+          ),
+          
+          SizedBox(height: 8),
+          
+          // Información sobre PDF personalizado (más compacta)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue[700], size: 14),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Carga un PDF para cada estudiante seleccionado (máx. 700KB)',
+                    style: TextStyle(
+                      color: Colors.blue[700],
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1192,6 +1231,140 @@ class _AdminBulkEmitCertificatesScreenState extends State<AdminBulkEmitCertifica
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBlockchainHashesDialog(List<Map<String, String>> blockchainHashes) {
+    final explorerUrl = BlockchainConfig.explorerUrl;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.link, color: Colors.blue[700], size: 28),
+            SizedBox(width: 8),
+            Expanded(child: Text('Transacciones Blockchain')),
+          ],
+        ),
+        content: Container(
+          width: double.maxFinite,
+          constraints: BoxConstraints(maxHeight: 400),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Los siguientes certificados fueron registrados en blockchain:',
+                  style: TextStyle(fontSize: 14),
+                ),
+                SizedBox(height: 16),
+                ...blockchainHashes.map((item) {
+                  final cleanHash = item['hash']!.trim().replaceAll(RegExp(r'\s+'), '');
+                  final transactionUrl = '$explorerUrl/tx/$cleanHash';
+                  
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['studentName']!,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: Colors.blue[900],
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          SelectableText(
+                            cleanHash,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 10,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          InkWell(
+                            onTap: () async {
+                              try {
+                                final Uri url = Uri.parse(transactionUrl);
+                                if (await canLaunchUrl(url)) {
+                                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
+                                  );
+                                }
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error al abrir el explorador: $e')),
+                                );
+                              }
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.open_in_new, size: 14, color: Colors.blue[700]),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Ver en PolygonScan',
+                                  style: TextStyle(
+                                    color: Colors.blue[700],
+                                    decoration: TextDecoration.underline,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.verified, size: 14, color: Colors.green[700]),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Todos los certificados están registrados de forma inmutable en la blockchain de Polygon.',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.green[900],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cerrar'),
           ),
         ],
       ),

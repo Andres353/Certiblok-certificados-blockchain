@@ -19,8 +19,20 @@ class SuperAdminInitializer {
       // Verificar si ya existe el Super Admin
       final existingUser = await _getSuperAdmin();
       if (existingUser != null) {
-        print('Super Admin ya existe: ${existingUser['email']}');
+        // Silenciosamente retornar si ya existe (no mostrar error)
         return;
+      }
+
+      // Verificar si el usuario ya existe en Firebase Auth
+      try {
+        final signInMethods = await _auth.fetchSignInMethodsForEmail(superAdminEmail);
+        if (signInMethods.isNotEmpty) {
+          // El usuario ya existe en Auth, solo actualizar Firestore
+          await _updateExistingSuperAdmin();
+          return;
+        }
+      } catch (e) {
+        // Si hay error al verificar, continuar con la creación
       }
 
       // Crear usuario en Firebase Auth
@@ -45,17 +57,19 @@ class SuperAdminInitializer {
           'lastLogin': FieldValue.serverTimestamp(),
         });
 
-        print('✅ Super Admin creado exitosamente:');
-        print('   Email: $superAdminEmail');
-        print('   Password: $superAdminPassword');
-        print('   Role: ${UserRoles.SUPER_ADMIN}');
-        print('   UID: ${user.uid}');
+        print('✅ Super Admin creado exitosamente');
       }
     } catch (e) {
-      print('Error al crear Super Admin: $e');
       // Si el usuario ya existe en Auth pero no en Firestore, actualizar Firestore
-      if (e.toString().contains('email-already-in-use')) {
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('email-already-in-use') || 
+          errorStr.contains('already exists') ||
+          errorStr.contains('already-in-use')) {
+        // Silenciosamente actualizar si ya existe
         await _updateExistingSuperAdmin();
+      } else {
+        // Solo mostrar error si no es un error de duplicado
+        print('⚠️ Error al inicializar Super Admin (puede que ya exista): $e');
       }
     }
   }

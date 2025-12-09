@@ -467,7 +467,7 @@ class _ProgramsManagementScreenState extends State<ProgramsManagementScreen> {
                        children: [
                          _buildInfoChip(
                            Icons.people,
-                           '${program.currentApplications}/${program.maxApplications}',
+                           '${program.approvedApplications ?? 0}/${program.maxApplications}',
                            Colors.blue,
                          ),
                          

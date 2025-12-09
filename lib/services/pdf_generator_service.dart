@@ -40,12 +40,13 @@ class PDFGeneratorService {
       }
 
       // Crear página del certificado en formato horizontal
+      final pageWidget = await _buildCertificatePage(template, data, logoImage);
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4.landscape, // Formato horizontal
-          margin: pw.EdgeInsets.all(20), // Márgenes más pequeños para aprovechar el espacio
+          margin: pw.EdgeInsets.zero, // Sin márgenes para que cubra toda la hoja
           build: (pw.Context context) {
-            return _buildCertificatePage(template, data, logoImage);
+            return pageWidget;
           },
         ),
       );
@@ -59,7 +60,9 @@ class PDFGeneratorService {
   }
 
   // Construir la página del certificado usando la misma lógica que la vista previa
-  static pw.Widget _buildCertificatePage(CertificateTemplate template, Map<String, dynamic> data, pw.ImageProvider? logoImage) {
+  static Future<pw.Widget> _buildCertificatePage(CertificateTemplate template, Map<String, dynamic> data, pw.ImageProvider? logoImage) async {
+    final content = await _buildContent(template, data);
+    
     return pw.Container(
       width: double.infinity, // Usar todo el ancho disponible
       height: double.infinity, // Usar toda la altura disponible
@@ -96,7 +99,7 @@ class PDFGeneratorService {
             child: pw.Container(
               // No usar padding aquí para evitar que recorte los elementos posicionados
               // Los campos están posicionados absolutamente y pueden extenderse hasta los bordes
-              child: _buildContent(template, data),
+              child: content,
             ),
           ),
           
@@ -231,36 +234,58 @@ class PDFGeneratorService {
 
   // Construir contenido usando exactamente la misma lógica que la vista previa
   // Usar Stack con Positioned para posicionamiento absoluto, igual que la vista previa
-  static pw.Widget _buildContent(CertificateTemplate template, Map<String, dynamic> data) {
+  static Future<pw.Widget> _buildContent(CertificateTemplate template, Map<String, dynamic> data) async {
     // Filtrar campos visibles
     final visibleFields = template.fields.where((field) => field.isVisible).toList();
+
+    // Construir todos los campos de forma asíncrona
+    final positionedWidgets = await Future.wait(
+      visibleFields.map((field) async {
+        final fieldWidget = await _buildField(field, data);
+        
+        // Calcular altura del contenedor y posición
+        double containerHeight = field.position.height;
+        double topPosition = field.position.y;
+        
+        if (field.type == 'signature' && field.signatureImageUrl != null && field.signatureImageUrl!.isNotEmpty) {
+          // Aumentar altura para incluir la imagen (80px imagen + 15px espacio + altura original)
+          containerHeight = 80 + 15 + field.position.height;
+          // Mover el contenedor hacia arriba para que la imagen quede más arriba
+          topPosition = field.position.y - 80; // Mover 80px hacia arriba
+        }
+        
+        return pw.Positioned(
+          left: field.position.x, // Sin padding adicional ya que no hay márgenes
+          top: topPosition,
+          child: pw.Container(
+            width: field.position.width,
+            constraints: pw.BoxConstraints(
+              minHeight: containerHeight,
+            ),
+            decoration: pw.BoxDecoration(
+              color: field.style.backgroundColor != 'transparent' 
+                  ? _parsePdfColor(field.style.backgroundColor) 
+                  : PdfColors.white, // Fondo blanco por defecto para cubrir todo
+              borderRadius: pw.BorderRadius.circular(field.style.borderRadius),
+            ),
+            child: pw.Padding(
+              padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: fieldWidget,
+            ),
+          ),
+        );
+      }),
+    );
 
     // Usar Stack con Positioned para posicionamiento absoluto, igual que la vista previa
     // Ajustar posiciones para compensar el padding de 20 que hay en la vista previa
     return pw.Stack(
-      children: visibleFields.map((field) {
-        return pw.Positioned(
-          left: field.position.x + 20, // Añadir padding de 20
-          top: field.position.y + 20, // Añadir padding de 20
-          child: pw.Container(
-            width: field.position.width,
-            height: field.position.height,
-            padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: pw.BoxDecoration(
-              color: field.style.backgroundColor != 'transparent' 
-                  ? _parsePdfColor(field.style.backgroundColor) 
-                  : null,
-              borderRadius: pw.BorderRadius.circular(field.style.borderRadius),
-            ),
-            child: _buildField(field, data),
-          ),
-        );
-      }).toList(),
+      children: positionedWidgets,
     );
   }
 
   // Construir un campo individual usando exactamente la misma lógica que la vista previa
-  static pw.Widget _buildField(TemplateField field, Map<String, dynamic> data) {
+  static Future<pw.Widget> _buildField(TemplateField field, Map<String, dynamic> data) async {
     final style = field.style;
     
     pw.Widget content;
@@ -277,18 +302,56 @@ class PDFGeneratorService {
           crossAlign = pw.CrossAxisAlignment.center;
         }
         
-        content = pw.Column(
-          crossAxisAlignment: crossAlign,
-          children: [
-            // Línea de firma
-            pw.Container(
-              width: field.position.width,
-              height: 1,
-              color: _parsePdfColor(style.color),
-            ),
-            pw.SizedBox(height: 4),
-            // Texto de la firma
-            pw.Text(
+        // Usar Column normal con la imagen arriba y la línea abajo
+        List<pw.Widget> columnChildren = [];
+        
+        // Imagen de firma digital posicionada arriba (si existe)
+        if (field.signatureImageUrl != null && field.signatureImageUrl!.isNotEmpty) {
+          try {
+            final signatureImage = await _loadImageFromUrl(field.signatureImageUrl!);
+            if (signatureImage != null) {
+              columnChildren.add(
+                pw.Container(
+                  height: 80 + 15, // Altura de imagen + margen inferior (reducido de 25 a 15)
+                  child: pw.Stack(
+                    children: [
+                      pw.Positioned(
+                        left: -10, // Mover 10px a la izquierda (reducido de 20 para moverla más a la derecha)
+                        top: 0,
+                        child: pw.Container(
+                          constraints: pw.BoxConstraints(
+                            maxWidth: field.position.width,
+                            maxHeight: 80,
+                          ),
+                          child: pw.Image(signatureImage, fit: pw.BoxFit.contain),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          } catch (e) {
+            print('⚠️ Error cargando imagen de firma: $e');
+            // Continuar sin la imagen si hay error
+          }
+        }
+        
+        // Línea de firma - posición fija (no se mueve)
+        columnChildren.add(
+          pw.Container(
+            width: field.position.width, // Usar ancho completo sin restar padding
+            height: 1,
+            color: _parsePdfColor(style.color),
+          ),
+        );
+        columnChildren.add(pw.SizedBox(height: 4));
+        
+        // Texto de la firma
+        columnChildren.add(
+          pw.SizedBox(
+            width: field.position.width, // Usar ancho completo sin restar padding
+            child: pw.Text(
               _getFieldValue(field, data),
               style: pw.TextStyle(
                 font: pw.Font.helvetica(),
@@ -299,8 +362,20 @@ class PDFGeneratorService {
                 letterSpacing: 0.5,
               ),
               textAlign: _getTextAlign(style.textAlign),
+              maxLines: null, // Permitir múltiples líneas si es necesario
+              overflow: pw.TextOverflow.visible, // Permitir que el texto se muestre completo
             ),
-          ],
+          ),
+        );
+        
+        content = pw.Container(
+          width: field.position.width,
+          color: PdfColors.white, // Fondo blanco para cubrir todo
+          child: pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            crossAxisAlignment: crossAlign,
+            children: columnChildren,
+          ),
         );
         break;
       case 'image':

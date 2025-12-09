@@ -1,0 +1,304 @@
+// Base de Datos CertiBlock - Diagrama para dbdiagram.io
+// Copia y pega este contenido en https://dbdiagram.io/d
+
+Table institutions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null]
+  short_name varchar(50)
+  description text
+  logo_url text
+  institution_code varchar(10) [unique, not null]
+  colors jsonb
+  settings jsonb
+  status varchar(20) [default: 'active']
+  admin_email varchar(255)
+  admin_name varchar(255)
+  admin_password_hash varchar(255)
+  admin_must_change_password boolean [default: false]
+  admin_is_temporary_password boolean [default: false]
+  created_by uuid
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  email varchar(255) [unique, not null]
+  password_hash varchar(255) [not null]
+  salt varchar(255)
+  full_name varchar(255) [not null]
+  role varchar(50) [not null]
+  institution_id uuid
+  student_id varchar(50)
+  program_id varchar(50)
+  faculty_id varchar(50)
+  program varchar(255)
+  faculty varchar(255)
+  phone varchar(20)
+  document varchar(50)
+  birth_date varchar(20)
+  address text
+  assignments jsonb [default: `'[]'`]
+  emisor_type varchar(50)
+  institution_name varchar(255)
+  is_verified boolean [default: false]
+  must_change_password boolean [default: false]
+  is_temporary_password boolean [default: false]
+  is_active boolean [default: true]
+  verification_code varchar(10) [default: '000000']
+  login_attempts integer [default: 0]
+  locked_until timestamptz
+  last_login timestamptz
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table faculties {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null]
+  description text
+  institution_id uuid [not null]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table programs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null]
+  description text
+  faculty_id uuid
+  institution_id uuid [not null]
+  program_code varchar(50) [unique, not null]
+  is_global boolean [default: false]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table certificates {
+  id uuid [pk, default: `gen_random_uuid()`]
+  unique_hash varchar(255) [unique, not null]
+  institution_id uuid [not null]
+  student_id uuid [not null]
+  certificate_type varchar(50) [not null]
+  title varchar(255) [not null]
+  description text
+  qr_code text
+  status varchar(20) [default: 'active']
+  issued_at timestamptz [default: `now()`]
+  revoked_at timestamptz
+  expires_at timestamptz
+  validation_history jsonb [default: `'[]'`]
+  pdf_url text
+  template_id uuid
+  data jsonb
+  faculty_id varchar(255)
+  faculty_name varchar(255)
+  program_id varchar(255)
+  program_name varchar(255)
+  student_id_in_institution varchar(255)
+  issued_by_name varchar(255)
+  issued_by_role varchar(50)
+  template_data jsonb
+  custom_certificate_data text
+  custom_certificate_filename varchar(255)
+  custom_certificate_mimetype varchar(100)
+  is_pdf boolean [default: false]
+  institution_code varchar(50)
+  institution_name varchar(255)
+  issued_by varchar(255)
+  student_email varchar(255)
+  student_name varchar(255)
+  blockchain_hash text
+  blockchain_network varchar(50)
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table certificate_templates {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null]
+  description text
+  institution_id uuid [not null]
+  template_design jsonb [not null]
+  template_layout jsonb [not null]
+  template_fields jsonb [not null]
+  is_active boolean [default: true]
+  created_by uuid
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table student_institutions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  student_id uuid [not null]
+  institution_id uuid [not null]
+  program_id uuid [not null]
+  status varchar(20) [default: 'active']
+  joined_at timestamptz [default: `now()`]
+  left_at timestamptz
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+  
+  indexes {
+    (student_id, institution_id) [unique]
+  }
+}
+
+Table institution_requests {
+  id uuid [pk, default: `gen_random_uuid()`]
+  institution_name varchar(255) [not null]
+  short_name varchar(50)
+  institution_type varchar(50)
+  contact_name varchar(255) [not null]
+  contact_email varchar(255) [not null]
+  contact_phone varchar(20)
+  address text
+  city varchar(100)
+  country varchar(100)
+  website varchar(255)
+  description text
+  logo_url text
+  documents text
+  status varchar(20) [default: 'pending']
+  requested_at timestamptz [default: `now()`]
+  reviewed_by uuid
+  reviewed_at timestamptz
+  rejection_reason text
+  institution_id uuid
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table password_reset_codes {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  code varchar(10) [not null]
+  expires_at timestamptz [not null]
+  used boolean [default: false]
+  created_at timestamptz [default: `now()`]
+}
+
+Table security_logs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid
+  event varchar(50) [not null]
+  description text
+  ip_address varchar(45)
+  user_agent text
+  created_at timestamptz [default: `now()`]
+}
+
+Table page_content {
+  id uuid [pk, default: `gen_random_uuid()`]
+  page_name varchar(50) [unique, not null]
+  content jsonb [not null]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table grouped_qrs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null]
+  qr_url text [not null]
+  certificate_ids text[] [not null]
+  certificate_titles text[] [not null]
+  student_id uuid [not null]
+  student_name varchar(255) [not null]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table programs_opportunities {
+  id uuid [pk, default: `gen_random_uuid()`]
+  title varchar(255) [not null]
+  description text
+  institution_id uuid [not null]
+  institution_name varchar(255) [not null]
+  faculty_id uuid
+  faculty_name varchar(255)
+  career_ids text[] [default: `'{}'`]
+  career_names text[] [default: `'{}'`]
+  requirements text[] [default: `'{}'`]
+  application_deadline timestamptz [not null]
+  max_applications integer [default: 0]
+  current_applications integer [default: 0]
+  created_by uuid
+  created_by_name varchar(255)
+  additional_info jsonb [default: `'{}'`]
+  image_url text
+  pdf_url text
+  pdf_file_name varchar(255)
+  pdf_data text
+  is_active boolean [default: true]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+Table applications {
+  id uuid [pk, default: `gen_random_uuid()`]
+  student_id uuid [not null]
+  student_name varchar(255) [not null]
+  student_email varchar(255) [not null]
+  program_id uuid [not null]
+  program_title varchar(255) [not null]
+  institution_id uuid [not null]
+  institution_name varchar(255) [not null]
+  status varchar(20) [default: 'pending']
+  cv_url text
+  cv_file_name varchar(255)
+  selected_certificates text[] [default: `'{}'`]
+  certificate_details jsonb [default: `'[]'`]
+  motivation_letter text
+  motivation_pdf_data text
+  motivation_pdf_file_name varchar(255)
+  additional_documents jsonb [default: `'{}'`]
+  submitted_at timestamptz [default: `now()`]
+  reviewed_by uuid
+  reviewed_by_name varchar(255)
+  reviewed_at timestamptz
+  notes text
+  rejection_reason text
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+}
+
+// RELACIONES (Foreign Keys)
+
+Ref: users.institution_id > institutions.id [delete: set null]
+Ref: institutions.created_by > users.id [delete: set null]
+
+Ref: faculties.institution_id > institutions.id [delete: cascade]
+
+Ref: programs.faculty_id > faculties.id [delete: cascade]
+Ref: programs.institution_id > institutions.id [delete: cascade]
+
+Ref: certificates.institution_id > institutions.id [delete: cascade]
+Ref: certificates.student_id > users.id [delete: cascade]
+Ref: certificates.template_id > certificate_templates.id [delete: set null]
+
+Ref: certificate_templates.institution_id > institutions.id [delete: cascade]
+Ref: certificate_templates.created_by > users.id [delete: set null]
+
+Ref: student_institutions.student_id > users.id [delete: cascade]
+Ref: student_institutions.institution_id > institutions.id [delete: cascade]
+Ref: student_institutions.program_id > programs.id [delete: cascade]
+
+Ref: institution_requests.reviewed_by > users.id [delete: set null]
+Ref: institution_requests.institution_id > institutions.id [delete: set null]
+
+Ref: password_reset_codes.user_id > users.id [delete: cascade]
+
+Ref: security_logs.user_id > users.id [delete: set null]
+
+Ref: grouped_qrs.student_id > users.id [delete: cascade]
+
+Ref: programs_opportunities.institution_id > institutions.id [delete: cascade]
+Ref: programs_opportunities.faculty_id > faculties.id [delete: set null]
+Ref: programs_opportunities.created_by > users.id [delete: set null]
+
+Ref: applications.student_id > users.id [delete: cascade]
+Ref: applications.program_id > programs_opportunities.id [delete: cascade]
+Ref: applications.institution_id > institutions.id [delete: cascade]
+Ref: applications.reviewed_by > users.id [delete: set null]
+
+

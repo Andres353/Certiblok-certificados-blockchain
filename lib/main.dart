@@ -6,6 +6,7 @@ import 'dart:html' as html;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend_app/services/supabase/supabase_config.dart';
 import 'package:frontend_app/services/supabase/setup_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:frontend_app/screens/inicio/main_menu.dart';
 import 'package:frontend_app/screens/inicio/set_password_page.dart';
 import 'package:frontend_app/screens/admin/manage_emisores_screen.dart';
@@ -21,72 +22,159 @@ import 'package:frontend_app/services/database_initializer.dart';
 import 'package:frontend_app/services/super_admin_initializer.dart';
 import 'package:frontend_app/services/user_context_service.dart';
 import 'package:frontend_app/services/adapters/certificate_adapter.dart';
+import 'package:frontend_app/screens/home_page.dart';
 import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializar Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    // Inicializar Firebase
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('✅ Firebase inicializado correctamente');
+  } catch (e, stackTrace) {
+    print('❌ Error inicializando Firebase: $e');
+    print('Stack trace: $stackTrace');
+    // Continuar aunque Firebase falle
+  }
 
-  // Inicializar Supabase
-  await SupabaseConfig.initialize();
+  try {
+    // Inicializar Supabase
+    await SupabaseConfig.initialize();
+    print('✅ Supabase inicializado correctamente');
+  } catch (e, stackTrace) {
+    print('❌ Error inicializando Supabase: $e');
+    print('Stack trace: $stackTrace');
+    // Continuar aunque Supabase falle
+  }
 
-  // Activar Supabase automáticamente
-  await SetupAuth.enableSupabaseAuth();
+  try {
+    // Activar Supabase automáticamente
+    await SetupAuth.enableSupabaseAuth();
+    print('✅ Supabase Auth activado');
+  } catch (e, stackTrace) {
+    print('❌ Error activando Supabase Auth: $e');
+    print('Stack trace: $stackTrace');
+  }
 
-  // Inicializar datos de ejemplo en la base de datos
-  await DatabaseInitializer.initializeSampleData();
+  try {
+    // Inicializar datos de ejemplo en la base de datos (silenciosamente)
+    await DatabaseInitializer.initializeSampleData();
+  } catch (e) {
+    // Solo mostrar error si no es un error esperado (datos ya existen)
+    final errorStr = e.toString().toLowerCase();
+    if (!errorStr.contains('already exists') && 
+        !errorStr.contains('duplicate')) {
+      print('⚠️ Error inicializando datos de ejemplo: $e');
+    }
+  }
   
-  // Inicializar Super Admin
-  await SuperAdminInitializer.initializeSuperAdmin();
+  try {
+    // Inicializar Super Admin (silenciosamente)
+    await SuperAdminInitializer.initializeSuperAdmin();
+  } catch (e) {
+    // Solo mostrar error si no es un error esperado (usuario ya existe)
+    final errorStr = e.toString().toLowerCase();
+    if (!errorStr.contains('already exists') && 
+        !errorStr.contains('email-already-in-use') &&
+        !errorStr.contains('already-in-use')) {
+      print('⚠️ Error inicializando Super Admin: $e');
+    }
+  }
 
-  // Cargar contexto del usuario si existe
-  await UserContextService.loadUserContext();
+  try {
+    // Cargar contexto del usuario si existe
+    await UserContextService.loadUserContext();
+    print('✅ Contexto de usuario cargado');
+  } catch (e, stackTrace) {
+    print('❌ Error cargando contexto de usuario: $e');
+    print('Stack trace: $stackTrace');
+  }
 
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  Widget _getInitialRoute() {
-    // Verificar si la URL actual es una verificación de certificados
-    final uri = Uri.base;
-    final fragment = uri.fragment;
-    
-    print('🔍 DEBUG - _getInitialRoute:');
-    print('  - URI completa: ${uri.toString()}');
-    print('  - Fragment: $fragment');
-    print('  - Path: ${uri.path}');
-    
-    // Verificar si es una URL de verificación de certificados (con hash routing)
-    if (fragment.startsWith('/verify/certificate/')) {
-      final fragmentSegments = fragment.split('/');
-      if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificate') {
-        final certificateId = fragmentSegments[3];
-        print('🔍 DEBUG - Detectada URL de certificado en _getInitialRoute: $certificateId');
-        print('🔍 DEBUG - Retornando _CertificateLoadingScreen');
-        // Solo mostrar la pantalla de carga, no ejecutar aquí
-        return _CertificateLoadingScreen(certificateId: certificateId);
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  Future<Widget>? _initialRouteFuture;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Cachear el future para evitar múltiples llamadas
+    _initialRouteFuture = _getInitialRoute();
+  }
+
+  Future<Widget> _getInitialRoute() async {
+    try {
+      // Verificar si la URL actual es una verificación de certificados
+      final uri = Uri.base;
+      final fragment = uri.fragment;
+      
+      // Verificar si es una URL de verificación de certificados (con hash routing)
+      if (fragment.startsWith('/verify/certificate/')) {
+        final fragmentSegments = fragment.split('/');
+        if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificate') {
+          final certificateId = fragmentSegments[3];
+          return _CertificateLoadingScreen(certificateId: certificateId);
+        }
       }
-    }
-    
-    // Verificar si es una URL de verificación de múltiples certificados
-    if (fragment.startsWith('/verify/certificates/')) {
-      final fragmentSegments = fragment.split('/');
-      if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificates') {
-        final certificateIds = fragmentSegments[3];
-        print('🔍 DEBUG - Detectada URL de múltiples certificados en _getInitialRoute: $certificateIds');
-        print('🔍 DEBUG - Retornando _CertificateLoadingScreen para múltiples certificados');
-        return _CertificateLoadingScreen(certificateId: certificateIds, isMultiple: true);
+      
+      // Verificar si es una URL de verificación de múltiples certificados
+      if (fragment.startsWith('/verify/certificates/')) {
+        final fragmentSegments = fragment.split('/');
+        if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificates') {
+          final certificateIds = fragmentSegments[3];
+          return _CertificateLoadingScreen(certificateId: certificateIds, isMultiple: true);
+        }
       }
+      
+      // Verificar si hay un usuario autenticado
+      // Primero verificar la sesión de Supabase (fuente de verdad)
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      
+      if (currentUser == null) {
+        // No hay sesión activa en Supabase, limpiar contexto y mostrar login
+        await UserContextService.clearUserContext();
+        return const MainMenu();
+      }
+      
+      // Hay sesión en Supabase, verificar contexto
+      // Intentar cargar contexto con timeout para evitar bucles infinitos
+      try {
+        final userContext = await UserContextService.loadUserContext()
+            .timeout(Duration(seconds: 5));
+        
+        if (userContext != null) {
+          // Redirigir al dashboard correspondiente según el rol
+          return HomePage(role: userContext.userRole);
+        }
+      } catch (e) {
+        print('⚠️ Error cargando contexto, limpiando: $e');
+        await UserContextService.clearUserContext();
+        return const MainMenu();
+      }
+      
+      // Si no hay contexto después de intentar cargarlo, mostrar loading
+      return _UserContextLoadingScreen();
+    } catch (e, stackTrace) {
+      print('❌ Error en _getInitialRoute: $e');
+      print('Stack trace: $stackTrace');
+      // En caso de error, limpiar y mostrar login
+      try {
+        await UserContextService.clearUserContext();
+      } catch (_) {}
+      return const MainMenu();
     }
-    
-    // Si no es una verificación de certificados, mostrar el menú principal
-    return const MainMenu();
   }
 
 
@@ -107,7 +195,36 @@ class MyApp extends StatelessWidget {
         Locale('en', 'US'), // Inglés (fallback)
       ],
       locale: Locale('es', 'ES'), // Idioma por defecto: español
-      home: _getInitialRoute(),
+      home: Builder(
+        builder: (context) {
+          return FutureBuilder<Widget>(
+            future: _initialRouteFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Scaffold(
+                  body: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+              if (snapshot.hasError) {
+                print('❌ Error en _getInitialRoute: ${snapshot.error}');
+                return _ErrorScreen(error: snapshot.error.toString());
+              }
+              return snapshot.data ?? const MainMenu();
+            },
+          );
+        },
+      ),
+      builder: (context, child) {
+        // Capturar errores de renderizado
+        ErrorWidget.builder = (FlutterErrorDetails details) {
+          print('❌ Error de renderizado: ${details.exception}');
+          print('Stack trace: ${details.stack}');
+          return _ErrorScreen(error: details.exception.toString());
+        };
+        return child ?? _ErrorScreen(error: 'Widget nulo');
+      },
 
       onGenerateRoute: (settings) {
         print('🔍 DEBUG - onGenerateRoute llamado con: ${settings.name}');
@@ -1750,7 +1867,152 @@ class _CertificateLoadingScreenState extends State<_CertificateLoadingScreen> {
       ),
     );
   }
+}
 
+// Widget para mostrar errores
+class _ErrorScreen extends StatelessWidget {
+  final String error;
 
+  const _ErrorScreen({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Error'),
+        backgroundColor: Colors.red,
+        foregroundColor: Colors.white,
+      ),
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.red,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Error al cargar la aplicación',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: SelectableText(
+                  error,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // Recargar la página
+                  html.window.location.reload();
+                },
+                icon: Icon(Icons.refresh),
+                label: Text('Recargar Página'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xff6C4DDC),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Widget para cargar el contexto del usuario cuando hay sesión pero no contexto
+class _UserContextLoadingScreen extends StatefulWidget {
+  const _UserContextLoadingScreen();
+
+  @override
+  State<_UserContextLoadingScreen> createState() => _UserContextLoadingScreenState();
+}
+
+class _UserContextLoadingScreenState extends State<_UserContextLoadingScreen> {
+  bool _isLoading = false; // Bandera para evitar múltiples llamadas
+
+  @override
+  void initState() {
+    super.initState();
+    // Usar un pequeño delay para evitar problemas de inicialización
+    Future.delayed(Duration(milliseconds: 100), () {
+      if (mounted && !_isLoading) {
+        _loadContext();
+      }
+    });
+  }
+
+  Future<void> _loadContext() async {
+    if (_isLoading) return; // Evitar múltiples llamadas
+    _isLoading = true;
+
+    try {
+      final loadedContext = await UserContextService.loadUserContext();
+      if (!mounted) return;
+      
+      if (loadedContext != null) {
+        print('✅ Contexto cargado: ${loadedContext.userRole}');
+        // Usar Navigator.of(context, rootNavigator: true) para evitar problemas
+        Navigator.of(context, rootNavigator: true).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => HomePage(role: loadedContext.userRole),
+          ),
+        );
+      } else {
+        // No se pudo cargar el contexto, limpiar y mostrar login
+        await UserContextService.clearUserContext();
+        if (!mounted) return;
+        Navigator.of(context, rootNavigator: true).pushReplacement(
+          MaterialPageRoute(builder: (context) => const MainMenu()),
+        );
+      }
+    } catch (e) {
+      print('❌ Error cargando contexto: $e');
+      if (!mounted) return;
+      await UserContextService.clearUserContext();
+      Navigator.of(context, rootNavigator: true).pushReplacement(
+        MaterialPageRoute(builder: (context) => const MainMenu()),
+      );
+    } finally {
+      _isLoading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Cargando sesión...'),
+          ],
+        ),
+      ),
+    );
+  }
 }
 

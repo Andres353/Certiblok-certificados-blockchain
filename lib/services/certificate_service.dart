@@ -599,8 +599,8 @@ class CertificateService {
         throw Exception('Usuario no autenticado');
       }
       
-      // Verificar permisos
-      if (!['super_admin', 'admin_institution'].contains(context.userRole)) {
+      // Verificar permisos - solo admins y emisores pueden revocar
+      if (!['super_admin', 'admin_institution', 'emisor'].contains(context.userRole)) {
         throw Exception('No tienes permisos para revocar certificados');
       }
       

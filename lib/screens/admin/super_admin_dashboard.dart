@@ -2,9 +2,12 @@
 // Dashboard para Super Administradores del sistema multi-tenant
 
 import 'dart:async';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/adapters/institution_adapter.dart';
 import '../../services/adapters/institution_request_adapter.dart';
+import '../../services/adapters/auth_adapter.dart';
 import '../../services/alert_service.dart';
 import '../../models/institution.dart';
 import 'institution_management_screen.dart';
@@ -128,6 +131,40 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     AlertService.showSuccess(context, 'Éxito', 'Datos actualizados desde Supabase');
   }
 
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cerrar Sesión'),
+        content: Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // Cerrar sesión y esperar a que se limpie
+      await AuthAdapter.logout();
+      // Esperar un momento para asegurar que la sesión se limpie completamente
+      await Future.delayed(Duration(milliseconds: 300));
+      // Verificar que la sesión esté realmente limpia
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null && mounted) {
+        // Recargar la página para que _getInitialRoute() se ejecute con estado limpio
+        html.window.location.reload();
+      }
+    }
+  }
+
   void _setupRealtimeUpdates() {
     // Cargar instituciones desde Supabase
     _loadInstitutionsFromSupabase();
@@ -221,6 +258,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             },
             icon: Icon(Icons.refresh),
             tooltip: 'Forzar Actualización',
+          ),
+          IconButton(
+            icon: Icon(Icons.logout),
+            tooltip: 'Cerrar Sesión',
+            onPressed: _logout,
           ),
         ],
       ),
@@ -445,123 +487,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               Color(0xff6C4DDC),
               () => _navigateToBlockchainWallet(),
             ),
-            
-            // Sección de instituciones recientes con logos
-            if (_institutions.isNotEmpty) ...[
-              SizedBox(height: 20),
-              Divider(),
-              SizedBox(height: 10),
-              Text(
-                'Instituciones Recientes',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xff2E2F44),
-                ),
-              ),
-              SizedBox(height: 12),
-              _buildRecentInstitutions(),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildRecentInstitutions() {
-    // Mostrar las 3 instituciones más recientes
-    final recentInstitutions = _institutions.take(3).toList();
-    
-    return Column(
-      children: recentInstitutions.map((institution) => 
-        Container(
-          margin: EdgeInsets.only(bottom: 8),
-          child: InkWell(
-            onTap: () => _viewInstitutionDetails(institution),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Color(int.parse(institution.colors.primary.replaceAll('#', '0xFF'))),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: institution.logoUrl.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: Image.network(
-                              institution.logoUrl,
-                              width: 32,
-                              height: 32,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Text(
-                                    institution.shortName,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          )
-                        : Center(
-                            child: Text(
-                              institution.shortName,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          institution.name,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xff2E2F44),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          institution.status.displayName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _getStatusColor(institution.status),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 14,
-                    color: Colors.grey[400],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ).toList(),
-    );
-  }
 
   Color _getStatusColor(InstitutionStatus status) {
     switch (status) {

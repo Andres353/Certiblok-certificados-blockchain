@@ -18,6 +18,7 @@ class ProgramOpportunity {
   final DateTime applicationDeadline;
   final int maxApplications;
   final int currentApplications;
+  final int? approvedApplications; // Número de aplicaciones aprobadas (opcional)
   final String createdBy;
   final String createdByName;
   final DateTime createdAt;
@@ -43,6 +44,7 @@ class ProgramOpportunity {
     required this.applicationDeadline,
     required this.maxApplications,
     required this.currentApplications,
+    this.approvedApplications,
     required this.createdBy,
     required this.createdByName,
     required this.createdAt,
@@ -98,6 +100,7 @@ class ProgramOpportunity {
       applicationDeadline: DateTime.tryParse(data['application_deadline'] ?? '') ?? DateTime.now(),
       maxApplications: data['max_applications'] ?? 0,
       currentApplications: data['current_applications'] ?? 0,
+      approvedApplications: data['approved_applications'], // Opcional, se calcula en el servicio
       createdBy: data['created_by'] ?? '',
       createdByName: data['created_by_name'] ?? '',
       createdAt: DateTime.tryParse(data['created_at'] ?? '') ?? DateTime.now(),
@@ -144,8 +147,10 @@ class ProgramOpportunity {
   }
 
   // Verificar si hay cupos disponibles
+  // Usa approvedApplications si está disponible (solo aprobadas), sino usa currentApplications (todas las postulaciones)
   bool get hasAvailableSlots {
-    return currentApplications < maxApplications;
+    final approvedCount = approvedApplications ?? currentApplications;
+    return approvedCount < maxApplications;
   }
 
   // Obtener días restantes para postularse

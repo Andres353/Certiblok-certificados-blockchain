@@ -380,6 +380,7 @@ class TemplateField {
   final FieldStyle style;
   final bool isVisible;
   final int order;
+  final String? signatureImageUrl; // URL de la imagen de firma digital (solo para tipo 'signature')
 
   TemplateField({
     required this.id,
@@ -390,6 +391,7 @@ class TemplateField {
     required this.style,
     this.isVisible = true,
     required this.order,
+    this.signatureImageUrl,
   });
 
   factory TemplateField.fromMap(Map<String, dynamic> data) {
@@ -402,6 +404,7 @@ class TemplateField {
       style: FieldStyle.fromMap(data['style'] ?? {}),
       isVisible: data['isVisible'] ?? true,
       order: data['order'] ?? 0,
+      signatureImageUrl: data['signatureImageUrl'],
     );
   }
 
@@ -415,6 +418,7 @@ class TemplateField {
       'style': style.toMap(),
       'isVisible': isVisible,
       'order': order,
+      if (signatureImageUrl != null) 'signatureImageUrl': signatureImageUrl,
     };
   }
 }

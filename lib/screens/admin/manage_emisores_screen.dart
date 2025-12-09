@@ -593,21 +593,21 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                           child: Padding(
                             padding: EdgeInsets.all(12),
                             child: Row(
-                              children: [
+                        children: [
                                 Radio<String>(
                                   value: 'none',
                                   groupValue: passwordOption,
-                                  onChanged: (value) {
-                                    setDialogState(() {
+                            onChanged: (value) {
+                              setDialogState(() {
                                       passwordOption = value ?? 'none';
-                                      passwordController.clear();
-                                    });
-                                  },
+                                  passwordController.clear();
+                              });
+                            },
                                   activeColor: Color(0xff6C4DDC),
-                                ),
+                          ),
                                 SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
+                          Expanded(
+                            child: Text(
                                     'Mantener contraseña actual',
                                     style: TextStyle(
                                       fontSize: 14,
@@ -615,9 +615,9 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
                                           ? FontWeight.w600 
                                           : FontWeight.normal,
                                     ),
-                                  ),
-                                ),
-                              ],
+                            ),
+                          ),
+                        ],
                             ),
                           ),
                         ),

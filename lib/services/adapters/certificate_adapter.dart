@@ -90,6 +90,18 @@ class CertificateAdapter {
     }
   }
 
+  // Obtener certificados emitidos por un emisor específico
+  static Future<List<dynamic>> getCertificatesByEmisor(String emisorId) async {
+    if (_useSupabase) {
+      final supabaseCerts = await SupabaseCertificateService.getCertificatesByEmisor(emisorId);
+      return supabaseCerts.map((cert) => cert.toMap()).toList();
+    } else {
+      // Firebase: filtrar por issuedBy
+      final certificates = await cert_service.CertificateService.getCertificates();
+      return certificates.where((cert) => cert.issuedBy == emisorId).toList();
+    }
+  }
+
   // Validar certificado
   static Future<bool> validateCertificate(String certificateId) async {
     if (_useSupabase) {

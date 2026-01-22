@@ -1,9 +1,13 @@
 // lib/screens/emisor/emisor_statistics_screen.dart
 // Pantalla de estadísticas para emisores
 
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../../services/user_context_service.dart';
 import '../../services/supabase/supabase_certificate_service.dart';
+import '../../services/alert_service.dart';
 
 class EmisorStatisticsScreen extends StatefulWidget {
   const EmisorStatisticsScreen({Key? key}) : super(key: key);
@@ -173,6 +177,11 @@ class _EmisorStatisticsScreenState extends State<EmisorStatisticsScreen> {
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(Icons.picture_as_pdf),
+            onPressed: _exportToPdf,
+            tooltip: 'Exportar a PDF',
+          ),
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: _loadStatistics,
@@ -693,6 +702,538 @@ class _EmisorStatisticsScreenState extends State<EmisorStatisticsScreen> {
     } else {
       return '${date.day}/${date.month}/${date.year}';
     }
+  }
+
+  String _formatDateFull(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDateForFile(DateTime date) {
+    return '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}_${date.hour.toString().padLeft(2, '0')}${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _exportToPdf() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      final userContext = UserContextService.currentContext;
+      final emisorName = userContext?.userName ?? 'Emisor';
+      final institutionName = userContext?.institutionName ?? 'Institución';
+      
+      // Crear documento PDF
+      final pdf = pw.Document();
+      final now = DateTime.now();
+      final byType = _stats['byType'] as Map<String, int>? ?? {};
+      final byStatus = _stats['byStatus'] as Map<String, int>? ?? {};
+      final byCareer = _stats['byCareer'] as Map<String, int>? ?? {};
+      final sortedMonths = _stats['sortedMonths'] as List<MapEntry<String, int>>? ?? [];
+      
+      // Página 1: Portada y Resumen Ejecutivo
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+              // Portada
+              pw.Center(
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      'REPORTE DE EMISOR',
+                      style: pw.TextStyle(
+                        fontSize: 32,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Text(
+                      emisorName,
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    pw.Text(
+                      institutionName,
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Text(
+                      'CertiBlock - Sistema de Certificados Académicos',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 40),
+                    pw.Text(
+                      'Generado el: ${_formatDateFull(now)}',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        color: PdfColors.grey600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 40),
+              
+              // Resumen Ejecutivo
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  'Resumen Ejecutivo',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              
+              // Estadísticas principales en tabla
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                children: [
+                  _buildTableRow('Total Certificados Emitidos', '${_stats['total'] ?? 0}', true),
+                  _buildTableRow('Últimos 30 días', '${_stats['last30Days'] ?? 0}'),
+                  _buildTableRow('Este mes', '${_stats['thisMonth'] ?? 0}'),
+                  _buildTableRow('Mes pasado', '${_stats['lastMonth'] ?? 0}'),
+                  _buildTableRow('Esta semana', '${_stats['thisWeek'] ?? 0}'),
+                  _buildTableRow('Estudiantes únicos atendidos', '${_stats['uniqueStudents'] ?? 0}', true),
+                  _buildTableRow(
+                    'Promedio certificados/estudiante',
+                    '${(_stats['avgCertificatesPerStudent'] ?? 0.0).toStringAsFixed(1)}',
+                  ),
+                  if ((_stats['topStudentCertificates'] ?? 0) > 0)
+                    _buildTableRow(
+                      'Máximo certificados a un estudiante',
+                      '${_stats['topStudentCertificates'] ?? 0}',
+                    ),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+      
+      // Página 2: Por Tipo y Estado
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+              // Certificados por Tipo
+              if (byType.isNotEmpty) ...[
+                pw.Header(
+                  level: 1,
+                  child: pw.Text(
+                    'Certificados por Tipo',
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                
+                pw.Table(
+                  border: pw.TableBorder.all(color: PdfColors.grey300),
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: [
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Tipo',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Cantidad',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                    ...byType.entries.map((entry) => pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            _getTypeName(entry.key),
+                            style: pw.TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            entry.value.toString(),
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    )).toList(),
+                  ],
+                ),
+                pw.SizedBox(height: 30),
+              ],
+              
+              // Estado de Certificados
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  'Estado de Certificados',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                columnWidths: {
+                  0: pw.FlexColumnWidth(3),
+                  1: pw.FlexColumnWidth(1),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                    children: [
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Estado',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Cantidad',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (byStatus['active'] != null && byStatus['active']! > 0)
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text('Activos', style: pw.TextStyle(fontSize: 11)),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            byStatus['active'].toString(),
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (byStatus['revoked'] != null && byStatus['revoked']! > 0)
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text('Revocados', style: pw.TextStyle(fontSize: 11)),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            byStatus['revoked'].toString(),
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (byStatus['expired'] != null && byStatus['expired']! > 0)
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text('Expirados', style: pw.TextStyle(fontSize: 11)),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            byStatus['expired'].toString(),
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+      
+      // Página 3: Por Carrera y Actividad Mensual
+      if (byCareer.isNotEmpty || sortedMonths.isNotEmpty)
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                // Certificados por Carrera
+                if (byCareer.isNotEmpty) ...[
+                  pw.Header(
+                    level: 1,
+                    child: pw.Text(
+                      'Certificados por Carrera',
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+                  
+                  pw.Table(
+                    border: pw.TableBorder.all(color: PdfColors.grey300),
+                    columnWidths: {
+                      0: pw.FlexColumnWidth(3),
+                      1: pw.FlexColumnWidth(1),
+                    },
+                    children: [
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                        children: [
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              'Carrera',
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              'Certificados',
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              textAlign: pw.TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                      ...byCareer.entries.take(10).map((entry) => pw.TableRow(
+                        children: [
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              entry.key,
+                              style: pw.TextStyle(fontSize: 11),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              entry.value.toString(),
+                              style: pw.TextStyle(fontSize: 11),
+                              textAlign: pw.TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      )).toList(),
+                    ],
+                  ),
+                  pw.SizedBox(height: 30),
+                ],
+                
+                // Actividad Mensual
+                if (sortedMonths.isNotEmpty) ...[
+                  pw.Header(
+                    level: 1,
+                    child: pw.Text(
+                      'Actividad Mensual',
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+                  
+                  pw.Table(
+                    border: pw.TableBorder.all(color: PdfColors.grey300),
+                    columnWidths: {
+                      0: pw.FlexColumnWidth(3),
+                      1: pw.FlexColumnWidth(1),
+                    },
+                    children: [
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                        children: [
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              'Mes',
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              'Certificados',
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              textAlign: pw.TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                      ...sortedMonths.map((entry) {
+                        final monthParts = entry.key.split('-');
+                        final monthName = _getMonthName(int.parse(monthParts[1]));
+                        final year = monthParts[0];
+                        return pw.TableRow(
+                          children: [
+                            pw.Padding(
+                              padding: pw.EdgeInsets.all(8),
+                              child: pw.Text(
+                                '$monthName $year',
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: pw.EdgeInsets.all(8),
+                              child: pw.Text(
+                                entry.value.toString(),
+                                style: pw.TextStyle(fontSize: 11),
+                                textAlign: pw.TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ],
+              ];
+            },
+          ),
+        );
+      
+      // Generar bytes del PDF
+      final pdfBytes = await pdf.save();
+      
+      // Descargar el PDF
+      final blob = html.Blob([pdfBytes], 'application/pdf');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final fileName = 'reporte_emisor_${emisorName.replaceAll(' ', '_')}_${_formatDateForFile(now)}.pdf';
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
+      
+      setState(() => _isLoading = false);
+      AlertService.showSuccess(
+        context,
+        'Éxito',
+        'Reporte exportado exitosamente como PDF',
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      print('❌ Error exportando PDF: $e');
+      AlertService.showError(
+        context,
+        'Error',
+        'Error al exportar reporte: $e',
+      );
+    }
+  }
+
+  pw.TableRow _buildTableRow(String label, String value, [bool isHeader = false]) {
+    return pw.TableRow(
+      decoration: isHeader 
+          ? pw.BoxDecoration(color: PdfColors.blue100)
+          : null,
+      children: [
+        pw.Padding(
+          padding: pw.EdgeInsets.all(8),
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontSize: isHeader ? 12 : 11,
+            ),
+          ),
+        ),
+        pw.Padding(
+          padding: pw.EdgeInsets.all(8),
+          child: pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontSize: isHeader ? 12 : 11,
+            ),
+            textAlign: pw.TextAlign.right,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    return months[month - 1];
   }
 }
 

@@ -143,14 +143,14 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
         final bytes = file.bytes;
         
         if (bytes != null) {
-          // Usar el mismo método que para programas de pasantías
-          final pdfData = await ImageUploadService.uploadPdfBytes(
+          // Subir PDF a Supabase Storage
+          final pdfUrl = await ImageUploadService.uploadPdfBytes(
             Uint8List.fromList(bytes),
             'motivation_letters/${DateTime.now().millisecondsSinceEpoch}_${file.name}',
           );
           
           setState(() {
-            _motivationPdfData = pdfData;
+            _motivationPdfData = pdfUrl; // Almacenar URL de Supabase Storage
             _motivationPdfFileName = file.name;
             _isUploadingMotivationPdf = false;
           });

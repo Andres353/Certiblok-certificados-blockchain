@@ -26,7 +26,7 @@ class BlockchainConfig {
   static const String testnetContractAddress = '0x0000000000000000000000000000000000000000'; // CAMBIAR ESTO
   
   // Para mainnet:
-  static const String mainnetContractAddress = '0xd9145CCE52D386f254917e481eB44e9943F39138'; // Contrato desplegado en Polygon Mainnet
+  static const String mainnetContractAddress = '0x92DCb57F0c42D31FE3FF8Cd4bD44C6689434D504'; // Contrato desplegado en Polygon Mainnet
   
   static String get rpcUrl => useTestnet ? mumbaiTestnetRpcUrl : polygonMainnetRpcUrl;
   static String get explorerUrl => useTestnet ? mumbaiTestnetExplorer : polygonMainnetExplorer;
@@ -37,7 +37,7 @@ class BlockchainConfig {
   static const int gasPrice = 30; // 30 gwei es razonable para Polygon
   
   // Gas limit estimado por transacción
-  static const int gasLimit = 200000; // Suficiente para emitir un certificado
+  static const int gasLimit = 500000; // Aumentado para evitar "out of gas"
   
   // Costo estimado por certificado (en MATIC)
   // Gas limit * Gas price = ~200,000 * 30 gwei = 0.006 MATIC (~$0.004 USD)

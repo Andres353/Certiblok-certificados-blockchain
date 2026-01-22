@@ -1,6 +1,7 @@
 // lib/services/supabase/supabase_storage_service.dart
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../user_context_service.dart';
 
 class SupabaseStorageService {
   static SupabaseClient get _client => Supabase.instance.client;
@@ -11,8 +12,37 @@ class SupabaseStorageService {
     required String path,
     required Uint8List fileBytes,
     String? contentType,
+    bool requireAuth = false, // Por defecto no requiere autenticación (para registro de instituciones)
   }) async {
     try {
+      // Verificar autenticación solo si es requerida
+      if (requireAuth) {
+        final user = _client.auth.currentUser;
+        final context = UserContextService.currentContext;
+        
+        if (user == null && context == null) {
+          print('❌ Error: Usuario no autenticado en Supabase ni en contexto de aplicación');
+          throw Exception('Usuario no autenticado. Por favor, inicia sesión nuevamente.');
+        }
+        
+        if (user != null) {
+          print('🔐 Usuario autenticado en Supabase Auth: ${user.id}');
+          print('🔐 Email: ${user.email}');
+          print('🔐 Sesión activa: ${_client.auth.currentSession != null}');
+        } else if (context != null) {
+          print('⚠️ No hay sesión en Supabase Auth, pero hay contexto de usuario');
+          print('   Usuario: ${context.userEmail}');
+          print('   Rol: ${context.userRole}');
+          print('   Intentando subir archivo usando contexto de usuario...');
+          print('   NOTA: Esto requiere que las políticas RLS estén configuradas para autenticación personalizada');
+          print('   Si falla, ejecuta: supabase_storage_policies_custom_auth.sql');
+        }
+      } else {
+        print('🔓 Subiendo archivo sin requerir autenticación (registro público)');
+      }
+      
+      print('📤 Subiendo archivo a bucket: $bucket, path: $path');
+      
       await _client.storage.from(bucket).uploadBinary(
         path,
         fileBytes,
@@ -22,11 +52,43 @@ class SupabaseStorageService {
         ),
       );
       
-      // Obtener URL pública
-      final publicUrl = _client.storage.from(bucket).getPublicUrl(path);
-      return publicUrl;
+      // Obtener URL según el tipo de bucket
+      // Para buckets públicos: usar getPublicUrl
+      // Para buckets privados: usar getSignedUrl
+      String fileUrl;
+      
+      // Verificar si el bucket es público o privado
+      // Por ahora, asumimos que pdfs puede ser privado, otros son públicos
+      if (bucket == 'pdfs') {
+        // Para bucket pdfs, intentar URL pública primero
+        // Si el bucket es público, funcionará
+        // Si es privado, necesitamos URL firmada
+        try {
+          fileUrl = _client.storage.from(bucket).getPublicUrl(path);
+          print('✅ Archivo subido exitosamente (URL pública): $fileUrl');
+        } catch (e) {
+          // Si falla, el bucket es privado, usar URL firmada
+          print('⚠️ Bucket pdfs es privado, generando URL firmada...');
+          final signedUrl = await _client.storage
+              .from(bucket)
+              .createSignedUrl(path, 86400); // Válida por 24 horas
+          fileUrl = signedUrl;
+          print('✅ Archivo subido exitosamente (URL firmada): $fileUrl');
+        }
+      } else {
+        // Para otros buckets (públicos), usar URL pública
+        fileUrl = _client.storage.from(bucket).getPublicUrl(path);
+        print('✅ Archivo subido exitosamente (URL pública): $fileUrl');
+      }
+      
+      return fileUrl;
     } catch (e) {
-      print('Error subiendo archivo $path a $bucket: $e');
+      print('❌ Error subiendo archivo $path a $bucket: $e');
+      print('   Tipo de error: ${e.runtimeType}');
+      if (e.toString().contains('row-level security')) {
+        print('⚠️ Error de RLS - Verifica que las políticas estén configuradas correctamente');
+        print('   Para registro de instituciones, ejecuta supabase_storage_policies_fix.sql');
+      }
       return null;
     }
   }

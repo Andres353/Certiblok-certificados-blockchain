@@ -1152,7 +1152,7 @@ class _RegisterInstState extends State<RegisterInst> {
                   controller: _contactPhoneController,
                   decoration: InputDecoration(
                     labelText: 'Teléfono *',
-                    hintText: 'Ej: +591 2 2441555',
+                    hintText: 'Ej: 2441555 o 70123456',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(color: Colors.grey[300]!),

@@ -1,0 +1,19 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: certiblock-frontend
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    environment:
+      # Variables de entorno opcionales
+      - FLUTTER_WEB_USE_SKIA=false
+    networks:
+      - certiblock-network
+
+networks:
+  certiblock-network:
+    driver: bridge
+

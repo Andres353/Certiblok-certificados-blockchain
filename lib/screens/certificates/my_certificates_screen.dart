@@ -125,6 +125,8 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -138,6 +140,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: _loadCertificates,
+            tooltip: 'Actualizar',
           ),
         ],
       ),
@@ -145,7 +148,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
         children: [
           // Filtros y búsqueda
           Container(
-            padding: EdgeInsets.all(16),
+            padding: EdgeInsets.all(isMobile ? 12 : 16),
             color: Colors.grey[50],
             child: Column(
               children: [
@@ -153,14 +156,21 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                 TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Buscar por título o tipo de certificado...',
+                    hintText: isMobile 
+                        ? 'Buscar certificado...' 
+                        : 'Buscar por título o tipo de certificado...',
                     prefixIcon: Icon(Icons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                     filled: true,
                     fillColor: Colors.white,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 12 : 16,
+                      vertical: isMobile ? 12 : 16,
+                    ),
                   ),
+                  style: TextStyle(fontSize: isMobile ? 14 : 16),
                   onChanged: (value) {
                     setState(() {
                       _searchQuery = value;
@@ -168,7 +178,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                   },
                 ),
                 
-                SizedBox(height: 12),
+                SizedBox(height: isMobile ? 10 : 12),
                 
                 // Filtros
                 SingleChildScrollView(
@@ -176,9 +186,14 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                   child: Row(
                     children: _filters.map((filter) {
                       return Padding(
-                        padding: EdgeInsets.only(right: 8),
+                        padding: EdgeInsets.only(right: isMobile ? 6 : 8),
                         child: FilterChip(
-                          label: Text(filter['label']!),
+                          label: Text(
+                            filter['label']!,
+                            style: TextStyle(
+                              fontSize: isMobile ? 12 : 14,
+                            ),
+                          ),
                           selected: _selectedFilter == filter['value'],
                           onSelected: (selected) {
                             setState(() {
@@ -187,6 +202,10 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                           },
                           selectedColor: Color(0xff6C4DDC).withOpacity(0.2),
                           checkmarkColor: Color(0xff6C4DDC),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isMobile ? 8 : 12,
+                            vertical: isMobile ? 4 : 8,
+                          ),
                         ),
                       );
                     }).toList(),
@@ -210,39 +229,41 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
     return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: EdgeInsets.all(isMobile ? 24 : 32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.workspace_premium_outlined,
-              size: 80,
+              size: isMobile ? 60 : 80,
               color: Colors.grey[400],
             ),
-            SizedBox(height: 24),
+            SizedBox(height: isMobile ? 16 : 24),
             Text(
               'No hay certificados',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey[600],
               ),
             ),
-            SizedBox(height: 16),
+            SizedBox(height: isMobile ? 12 : 16),
             Text(
               _searchQuery.isNotEmpty
                   ? 'No se encontraron certificados con la búsqueda "$_searchQuery"'
                   : 'No tienes certificados emitidos aún.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: isMobile ? 14 : 16,
                 color: Colors.grey[500],
               ),
             ),
             if (_searchQuery.isNotEmpty) ...[
-              SizedBox(height: 24),
+              SizedBox(height: isMobile ? 16 : 24),
               ElevatedButton(
                 onPressed: () {
                   _searchController.clear();
@@ -250,7 +271,16 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                     _searchQuery = '';
                   });
                 },
-                child: Text('Limpiar búsqueda'),
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isMobile ? 20 : 24,
+                    vertical: isMobile ? 12 : 16,
+                  ),
+                ),
+                child: Text(
+                  'Limpiar búsqueda',
+                  style: TextStyle(fontSize: isMobile ? 14 : 16),
+                ),
               ),
             ],
           ],
@@ -262,67 +292,73 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
   Widget _buildCertificatesList() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Calcular número de columnas para ajustar a la pantalla (igual que dashboard principal)
+        // Calcular número de columnas y aspect ratio según el ancho disponible
         int crossAxisCount;
         double childAspectRatio;
-        
-        // Calcular el espacio disponible
         final availableWidth = constraints.maxWidth;
+        final isMobile = availableWidth < 600;
         
+        // Ajustar aspect ratio según el tamaño de pantalla
         if (availableWidth > 1400) {
           crossAxisCount = 4;
-          childAspectRatio = 1.6; // Más anchos y menos altos
+          childAspectRatio = 1.5;
         } else if (availableWidth > 1000) {
           crossAxisCount = 3;
-          childAspectRatio = 1.5; // Más anchos y menos altos
+          childAspectRatio = 1.5;
         } else if (availableWidth > 700) {
           crossAxisCount = 2;
-          childAspectRatio = 1.6; // Más anchos y menos altos
+          childAspectRatio = 1.4;
         } else {
-          crossAxisCount = 1;
-          childAspectRatio = 3.0; // Más anchos y menos altos
+          crossAxisCount = 1; // Móvil: 1 columna
+          childAspectRatio = 1.2; // Más alto en móvil para que quepa todo el contenido
         }
         
         return GridView.builder(
-          padding: EdgeInsets.all(16),
+          padding: EdgeInsets.all(isMobile ? 12 : 16),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             childAspectRatio: childAspectRatio,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
+            crossAxisSpacing: isMobile ? 8 : 12,
+            mainAxisSpacing: isMobile ? 8 : 12,
           ),
           itemCount: _filteredCertificates.length,
           itemBuilder: (context, index) {
             final certificate = _filteredCertificates[index];
-            return _buildCertificateCard(certificate);
+            return _buildCertificateCard(certificate, isMobile);
           },
         );
       },
     );
   }
 
-  Widget _buildCertificateCard(Certificate certificate) {
+  Widget _buildCertificateCard(Certificate certificate, bool isMobile) {
     return Card(
       elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      margin: EdgeInsets.zero,
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: Colors.white, // Color sólido sin degradado
+          color: Colors.white,
         ),
         child: InkWell(
           onTap: () => _viewCertificate(certificate),
           borderRadius: BorderRadius.circular(16),
-            child: Padding(
-            padding: EdgeInsets.all(16),
+          child: Padding(
+            padding: EdgeInsets.all(isMobile ? 10 : 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                
                 // Título del certificado
                 Container(
                   width: double.infinity,
-                  padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  padding: EdgeInsets.symmetric(
+                    vertical: isMobile ? 8 : 10,
+                    horizontal: isMobile ? 8 : 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Color(0xff6C4DDC).withOpacity(0.05),
                     borderRadius: BorderRadius.circular(10),
@@ -334,7 +370,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                   child: Text(
                     certificate.title,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: isMobile ? 13 : 15,
                       fontWeight: FontWeight.bold,
                       color: Color(0xff2E2F44),
                       height: 1.2,
@@ -345,7 +381,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                   ),
                 ),
                 
-                SizedBox(height: 12),
+                SizedBox(height: isMobile ? 8 : 12),
                 
                 // Información en badges
                 Row(
@@ -353,7 +389,10 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                     // Estado
                     Expanded(
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 6 : 8,
+                          vertical: isMobile ? 4 : 6,
+                        ),
                         decoration: BoxDecoration(
                           color: _getStatusColor(certificate.status).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -366,20 +405,25 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                           _getStatusText(certificate.status),
                           style: TextStyle(
                             color: _getStatusColor(certificate.status),
-                            fontSize: 11,
+                            fontSize: isMobile ? 10 : 11,
                             fontWeight: FontWeight.w600,
                           ),
                           textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
                     
-                    SizedBox(width: 6),
+                    SizedBox(width: isMobile ? 4 : 6),
                     
                     // Tipo de certificado
                     Expanded(
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 6 : 8,
+                          vertical: isMobile ? 4 : 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Color(0xff6C4DDC).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -391,7 +435,7 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                         child: Text(
                           _getCertificateTypeLabel(certificate.certificateType),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: isMobile ? 10 : 11,
                             color: Color(0xff6C4DDC),
                             fontWeight: FontWeight.w600,
                           ),
@@ -404,79 +448,144 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
                   ],
                 ),
                 
-                SizedBox(height: 12),
+                SizedBox(height: isMobile ? 6 : 12),
                 
-                // Información de institución
-                Container(
-                  padding: EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Row(
+                // Información de institución y fecha combinadas en móvil
+                if (isMobile)
+                  // En móvil: combinar institución y fecha en una sola fila
+                  Row(
                     children: [
-                      Icon(Icons.school, size: 14, color: Colors.grey[600]),
-                      SizedBox(width: 6),
                       Expanded(
-                        child: Text(
-                          certificate.institutionName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
-                            fontWeight: FontWeight.w500,
+                        child: Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[200]!),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.school, size: 12, color: Colors.grey[600]),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  certificate.institutionName,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
+                            SizedBox(width: 4),
+                            Text(
+                              _formatDate(certificate.issuedAt),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  // En desktop/tablet: mostrar separado
+                  Column(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.school, size: 14, color: Colors.grey[600]),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                certificate.institutionName,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _formatDate(certificate.issuedAt),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
                 
-                SizedBox(height: 6),
-                
-                // Fecha de emisión
-                Container(
-                  padding: EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
-                      SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _formatDate(certificate.issuedAt),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                SizedBox(height: 12),
+                SizedBox(height: isMobile ? 8 : 12),
                 
                 // Botón de acción principal
                 Container(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () => _viewCertificate(certificate),
-                    icon: Icon(Icons.visibility, size: 14),
-                    label: Text('Ver Información'),
+                    icon: Icon(Icons.visibility, size: isMobile ? 12 : 14),
+                    label: Text(
+                      'Ver Información',
+                      style: TextStyle(fontSize: isMobile ? 12 : 14),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Color(0xff6C4DDC),
                       foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 10),
+                      padding: EdgeInsets.symmetric(vertical: isMobile ? 8 : 10),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),

@@ -230,6 +230,49 @@ class SupabaseAuthService {
               // Establecer contexto
               await UserContextService.setUserContext(context);
               
+              // IMPORTANTE: También autenticar en Supabase Auth para que las políticas RLS funcionen
+              // Esto es necesario para que el usuario pueda subir archivos a Storage
+              try {
+                // Intentar autenticarse en Supabase Auth con el email y contraseña
+                await _client.auth.signInWithPassword(
+                  email: email.trim(),
+                  password: password.trim(),
+                );
+                print('✅ Sesión de Supabase Auth creada para Storage');
+              } catch (e) {
+                // Si falla, puede ser que el usuario no esté en Supabase Auth
+                // Intentar crear el usuario en Supabase Auth y luego autenticarse
+                print('⚠️ Usuario no existe en Supabase Auth, intentando crearlo...');
+                try {
+                  // Crear usuario en Supabase Auth
+                  final signUpResponse = await _client.auth.signUp(
+                    email: email.trim(),
+                    password: password.trim(),
+                    data: {
+                      'role': role,
+                      'institution_id': institutionId,
+                    },
+                  );
+                  
+                  if (signUpResponse.user != null) {
+                    print('✅ Usuario creado en Supabase Auth');
+                    // Ahora autenticarse
+                    await _client.auth.signInWithPassword(
+                      email: email.trim(),
+                      password: password.trim(),
+                    );
+                    print('✅ Sesión de Supabase Auth creada después de crear usuario');
+                  } else {
+                    print('⚠️ No se pudo crear usuario en Supabase Auth');
+                  }
+                } catch (signUpError) {
+                  // Si falla la creación, puede ser que el email ya exista pero con otra contraseña
+                  // o que haya otro problema. En este caso, el login principal ya funcionó
+                  print('⚠️ No se pudo crear sesión en Supabase Auth: $signUpError');
+                  print('   El login principal funcionó, pero Storage puede requerir autenticación en Supabase Auth');
+                }
+              }
+              
               return context;
             } else {
               print('Usuario no verificado');

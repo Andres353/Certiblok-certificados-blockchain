@@ -3,9 +3,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth_service.dart' as firebase_auth;
 import '../supabase/supabase_auth_service.dart';
 import '../user_context_service.dart';
+import '../auth_security_service.dart';
 
 class AuthAdapter {
   static bool _useSupabase = false; // Flag para cambiar entre Firebase y Supabase
+  static const int _accountLockoutMinutes = 15; // Tiempo de bloqueo de cuenta
 
   // Cambiar entre Firebase y Supabase
   static void useSupabase(bool useSupabase) {
@@ -25,22 +27,52 @@ class AuthAdapter {
 
   // Login con contexto
   static Future<UserContext?> loginWithContext(String email, String password) async {
+    // Verificar si la cuenta está bloqueada
+    final isLocked = await AuthSecurityService.isAccountLocked(email);
+    if (isLocked) {
+      final remainingTime = await AuthSecurityService.getRemainingLockoutTime(email);
+      throw Exception(
+        'Cuenta bloqueada por múltiples intentos fallidos. '
+        'Intenta de nuevo en ${remainingTime ?? _accountLockoutMinutes} minutos.'
+      );
+    }
+
+    UserContext? result;
     if (_useSupabase) {
-      return await SupabaseAuthService.loginWithContext(email, password);
+      result = await SupabaseAuthService.loginWithContext(email, password);
     } else {
       // Llamar a la función global de Firebase
-      return await firebase_auth.loginWithContext(email, password);
+      result = await firebase_auth.loginWithContext(email, password);
     }
+
+    // Si el login fue exitoso, limpiar intentos fallidos y registrar actividad
+    if (result != null) {
+      await AuthSecurityService.clearFailedLoginAttempts(email);
+      await AuthSecurityService.recordUserActivity();
+      // Iniciar monitoreo de sesión
+      AuthSecurityService.startSessionMonitoring();
+    } else {
+      // Si el login falló, registrar intento fallido
+      await AuthSecurityService.recordFailedLoginAttempt(email);
+    }
+
+    return result;
   }
 
   // Cerrar sesión
   static Future<void> logout() async {
+    // Detener monitoreo de sesión
+    AuthSecurityService.stopSessionMonitoring();
+    
     if (_useSupabase) {
       await SupabaseAuthService.logout();
     } else {
       // Llamar a la función global de Firebase
       await firebase_auth.logout();
     }
+    
+    // Limpiar datos de seguridad
+    await AuthSecurityService.clearAllSecurityData();
   }
 
   // Obtener usuario actual

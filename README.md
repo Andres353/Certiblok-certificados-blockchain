@@ -31,14 +31,26 @@ Certiblock es una plataforma innovadora multi-tenant que permite a instituciones
 
 ## 🛠️ Instalación y Configuración
 
+### 📚 Documentación Completa
+
+Para instalar el proyecto en una nueva laptop, consulta la documentación completa:
+
+- **🚀 [GUIA_INSTALACION_COMPLETA.md](GUIA_INSTALACION_COMPLETA.md)** - Guía completa paso a paso con toda la información necesaria
+- **⚡ [RESUMEN_RAPIDO_INSTALACION.md](RESUMEN_RAPIDO_INSTALACION.md)** - Resumen rápido para instalación rápida
+- **🔐 [CONFIGURACIONES_CREDENCIALES.md](CONFIGURACIONES_CREDENCIALES.md)** - Todas las credenciales y configuraciones
+- **✅ [CHECKLIST_PRE_FORMATEO.md](CHECKLIST_PRE_FORMATEO.md)** - Checklist antes de formatear/subir a Git
+
 ### Prerrequisitos
 
 - Flutter SDK 3.1.0 o superior
 - Dart SDK
+- Node.js >= 16.0.0 (para Hardhat y contratos inteligentes)
+- Git
 - Cuenta de Firebase
+- Cuenta de Supabase
 - Cuenta de EmailJS (para verificación por email)
 
-### Pasos de Instalación
+### Pasos de Instalación Rápida
 
 1. **Clonar el repositorio**
    ```bash
@@ -49,23 +61,19 @@ Certiblock es una plataforma innovadora multi-tenant que permite a instituciones
 2. **Instalar dependencias**
    ```bash
    flutter pub get
+   npm install
    ```
 
-3. **Configurar Firebase**
-   - Crear proyecto en [Firebase Console](https://console.firebase.google.com/)
-   - Habilitar Authentication, Firestore y Storage
-   - Descargar `google-services.json` (Android) y `GoogleService-Info.plist` (iOS)
-   - Colocar archivos en las carpetas correspondientes
+3. **Configurar servicios**
+   - Ver `GUIA_INSTALACION_COMPLETA.md` para configuración detallada
+   - Credenciales documentadas en `CONFIGURACIONES_CREDENCIALES.md`
 
-4. **Configurar EmailJS**
-   - Crear cuenta en [EmailJS](https://www.emailjs.com/)
-   - Configurar servicio de email
-   - Actualizar credenciales en `lib/screens/register_student.dart`
-
-5. **Ejecutar la aplicación**
+4. **Ejecutar la aplicación**
    ```bash
-   flutter run
+   flutter run -d chrome
    ```
+
+**⚠️ IMPORTANTE:** Para una instalación completa y sin problemas, sigue la guía completa en `GUIA_INSTALACION_COMPLETA.md`
 
 ## 📁 Estructura del Proyecto
 

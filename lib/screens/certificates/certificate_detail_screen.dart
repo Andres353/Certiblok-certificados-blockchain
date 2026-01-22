@@ -280,12 +280,14 @@ class CertificateDetailScreen extends StatelessWidget {
                 Color(0xff9C27B0),
                 [
                   _buildModernInfoRow('Código QR', certificate.qrCode, Icons.qr_code, context, isCode: true),
-                if (certificate.blockchainHash != null && certificate.blockchainHash!.isNotEmpty) ...[
-                    _buildBlockchainHashRow(certificate.blockchainHash!, context),
-                    // Solo mostrar el enlace al contrato para admin/emisor
-                    if (isAdminView)
-                      _buildBlockchainVerificationButton(context),
-                  ],
+                  // Mostrar hash del certificado (SIEMPRE usar blockchainHash, es el SHA-256 del certificado)
+                  if (certificate.blockchainHash != null && certificate.blockchainHash!.isNotEmpty)
+                    _buildHashRow(
+                      'Hash del Certificado', 
+                      certificate.blockchainHash!, // SIEMPRE usar blockchainHash (SHA-256 del certificado)
+                      context, 
+                      Icons.fingerprint
+                    ),
                 ],
               ),
             ),
@@ -428,27 +430,13 @@ class CertificateDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBlockchainHashRow(String blockchainHash, BuildContext context) {
-    // Obtener el hash de la transacción desde data (no el hash del certificado)
-    String? transactionHash = certificate.data['blockchain_transaction_hash'] as String?;
-    
-    // Si no hay hash de transacción, usar el hash del certificado como fallback
-    // pero esto no funcionará en Polygonscan ya que es un hash SHA-256, no un hash de transacción
-    if (transactionHash == null || transactionHash.isEmpty) {
-      transactionHash = null; // No mostrar enlace si no hay hash de transacción
-    } else {
-      // Limpiar el hash de transacción (eliminar espacios, saltos de línea, etc.)
-      transactionHash = transactionHash.trim().replaceAll(RegExp(r'\s+'), '');
-      
-      // Asegurar que tenga prefijo 0x
-      if (!transactionHash.startsWith('0x')) {
-        transactionHash = '0x$transactionHash';
-      }
-    }
-    
-    // Construir URL del explorador solo si hay hash de transacción
+  Widget _buildHashRow(String label, String hash, BuildContext context, IconData icon) {
+    // Construir URL para ver el contrato en Polygonscan
     final explorerUrl = BlockchainConfig.explorerUrl;
-    final transactionUrl = transactionHash != null ? '$explorerUrl/tx/$transactionHash' : null;
+    final contractAddress = BlockchainConfig.contractAddress;
+    final contractUrl = contractAddress.isNotEmpty && contractAddress != '0x0000000000000000000000000000000000000000'
+        ? '$explorerUrl/address/$contractAddress#readContract'
+        : null;
     
     return Padding(
       padding: EdgeInsets.only(bottom: 12),
@@ -456,7 +444,7 @@ class CertificateDetailScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            Icons.link,
+            icon,
             size: 16,
             color: Colors.grey[600],
           ),
@@ -466,7 +454,7 @@ class CertificateDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Hash Blockchain',
+                  label,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -475,22 +463,7 @@ class CertificateDetailScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 2),
                 GestureDetector(
-                  onTap: transactionUrl != null ? () async {
-                    try {
-                      final Uri url = Uri.parse(transactionUrl);
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
-                        );
-                      }
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error al abrir el explorador: $e')),
-                      );
-                    }
-                  } : null,
+                  onTap: () => _copyToClipboard(hash, context),
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -502,7 +475,7 @@ class CertificateDetailScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            blockchainHash.length > 20 ? '${blockchainHash.substring(0, 20)}...' : blockchainHash,
+                            hash.length > 40 ? '${hash.substring(0, 20)}...${hash.substring(hash.length - 20)}' : hash,
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 11,
@@ -512,11 +485,43 @@ class CertificateDetailScreen extends StatelessWidget {
                           ),
                         ),
                         SizedBox(width: 4),
-                        Icon(Icons.open_in_new, size: 12, color: Color(0xff6C4DDC)),
+                        Icon(Icons.copy, size: 12, color: Color(0xff6C4DDC)),
                       ],
                     ),
                   ),
                 ),
+                if (contractUrl != null) ...[
+                  SizedBox(height: 4),
+                  GestureDetector(
+                    onTap: () async {
+                      // Mostrar instrucciones de cómo usar el hash
+                      _showHashInstructions(context, hash, contractAddress);
+                    },
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Color(0xff6C4DDC).withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.2)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.info_outline, size: 12, color: Color(0xff6C4DDC)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Cómo verificar',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Color(0xff6C4DDC),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -534,9 +539,14 @@ class CertificateDetailScreen extends StatelessWidget {
       return SizedBox.shrink();
     }
     
-    // Construir URL del explorador para el contrato (no la transacción)
-    final explorerUrl = BlockchainConfig.explorerUrl;
-    final contractUrl = '$explorerUrl/address/$contractAddress';
+    // Obtener el hash del certificado (blockchainHash es el SHA-256 que se guarda en BD y blockchain)
+    // IMPORTANTE: Solo usar blockchainHash, NO uniqueHash ni hash
+    final certificateHash = certificate.blockchainHash;
+    
+    // Si no hay blockchainHash, no mostrar el botón (el certificado no está en blockchain)
+    if (certificateHash == null || certificateHash.isEmpty) {
+      return SizedBox.shrink();
+    }
     
     return Padding(
       padding: EdgeInsets.only(top: 8),
@@ -544,7 +554,7 @@ class CertificateDetailScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            Icons.link,
+            Icons.verified,
             size: 16,
             color: Colors.grey[600],
           ),
@@ -554,7 +564,7 @@ class CertificateDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Verificar en Blockchain',
+                  'Verificar Certificado',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -563,21 +573,9 @@ class CertificateDetailScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 2),
                 GestureDetector(
-                  onTap: () async {
-                    try {
-                      final Uri url = Uri.parse(contractUrl);
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('No se pudo abrir el explorador de blockchain')),
-                        );
-                      }
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error al abrir el explorador: $e')),
-                      );
-                    }
+                  onTap: () {
+                    // Mostrar modal con el hash del certificado
+                    _showHashInstructions(context, certificateHash, contractAddress);
                   },
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -590,7 +588,7 @@ class CertificateDetailScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            'Ver Contrato en Polygonscan',
+                            'Verificar en Blockchain',
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 11,
@@ -600,7 +598,7 @@ class CertificateDetailScreen extends StatelessWidget {
                           ),
                         ),
                         SizedBox(width: 4),
-                        Icon(Icons.open_in_new, size: 12, color: Color(0xff6C4DDC)),
+                        Icon(Icons.info_outline, size: 12, color: Color(0xff6C4DDC)),
                       ],
                     ),
                   ),
@@ -881,6 +879,11 @@ class CertificateDetailScreen extends StatelessWidget {
                 isFullWidth: true,
               ),
             ],
+            
+            SizedBox(height: 16),
+            
+            // Botón de verificación en blockchain
+            _buildBlockchainVerificationButton(context),
             
             SizedBox(height: 16),
             
@@ -1273,6 +1276,121 @@ class CertificateDetailScreen extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _showHashInstructions(BuildContext context, String hash, String contractAddress) {
+    final explorerUrl = BlockchainConfig.explorerUrl;
+    final contractUrl = '$explorerUrl/address/$contractAddress#readContract';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.info_outline, color: Color(0xff6C4DDC)),
+            SizedBox(width: 8),
+            Text('Cómo verificar el certificado'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Este hash es del certificado (SHA-256), no un hash de transacción.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              Text('Para verificar en Polygonscan:'),
+              SizedBox(height: 8),
+              Text('1. Ve al contrato inteligente:'),
+              SizedBox(height: 4),
+              GestureDetector(
+                onTap: () async {
+                  final Uri url = Uri.parse(contractUrl);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                child: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Color(0xff6C4DDC).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    contractAddress,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: Color(0xff6C4DDC),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 12),
+              Text('2. Busca la pestaña "Contract" en la fila de pestañas (puede estar más a la derecha, haz scroll horizontal si es necesario)'),
+              SizedBox(height: 8),
+              Text('3. Haz clic en "Contract", luego en "Read Contract"'),
+              SizedBox(height: 12),
+              Text('4. Busca las funciones:'),
+              SizedBox(height: 4),
+              Text('   • getCertificate', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('   • verifyCertificate', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 12),
+              Text('5. Pega este hash en el campo:'),
+              SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => _copyToClipboard(hash, context),
+                child: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: SelectableText(
+                          hash,
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.copy, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 12),
+              Text('6. Haz clic en "Query" para ver los datos del certificado.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cerrar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final Uri url = Uri.parse(contractUrl);
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url, mode: LaunchMode.externalApplication);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xff6C4DDC),
+            ),
+            child: Text('Abrir Contrato', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _copyToClipboard(String text, BuildContext? context) {

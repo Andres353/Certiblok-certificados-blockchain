@@ -591,7 +591,7 @@ class _ApplicationDetailsScreenState extends State<ApplicationDetailsScreen> {
         throw Exception('CV no disponible');
       }
 
-      // Si es una URL de Firebase Storage o HTTP(S), abrirla
+      // Si es una URL de Supabase Storage o HTTP(S), abrirla
       if (cvUrl.startsWith('http://') || cvUrl.startsWith('https://')) {
         final uri = Uri.parse(cvUrl);
         if (await canLaunchUrl(uri)) {

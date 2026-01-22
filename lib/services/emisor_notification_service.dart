@@ -64,6 +64,8 @@ class EmisorNotificationService {
             // Usar exactamente los mismos parámetros que el template de instituciones
             'name': 'CertiBlock',
             'to_email': email,
+            'to_name': fullName, // Nombre del emisor para el saludo
+            'full_name': fullName, // Nombre completo del emisor
             'message': '''
 ¡Hola $fullName!
 

@@ -5,6 +5,7 @@ import '../../services/user_context_service.dart';
 import '../../services/institution_status_service.dart';
 import '../../services/adapters/auth_adapter.dart';
 import '../../widgets/suspended_institution_widget.dart';
+import '../../widgets/user_info_card.dart';
 import 'join_institution_screen.dart';
 import 'share_certificates_screen.dart';
 
@@ -260,43 +261,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            // Header responsive
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(isWeb ? 24 : 20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Bienvenido, ${_userContext?.userName ?? 'Estudiante'}',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: isWeb ? 28 : 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_userContext?.institutionName != null || _userContext?.institution != null || _userContext?.institutionId != null) ...[
-                    SizedBox(height: 8),
-                    Text(
-                      'Estudiante de ${_userContext!.institutionName ?? _userContext!.institution}',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: isWeb ? 16 : 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            // Header usando UserInfoCard
+            if (_userContext != null)
+              UserInfoCard(userContext: _userContext!, isWeb: isWeb),
             
             SizedBox(height: 24),
             

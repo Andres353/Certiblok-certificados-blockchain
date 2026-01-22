@@ -1051,6 +1051,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                           _buildInfoRow('Idioma', institution.settings.defaultLanguage.toUpperCase()),
                         ],
                       ),
+
                     ],
                   ),
                 ),
@@ -1590,3 +1591,4 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
 
 }
+

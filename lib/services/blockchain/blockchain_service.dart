@@ -648,7 +648,7 @@ class BlockchainService {
             certificateHash,
           ],
           gasPrice: EtherAmount.fromUnitAndValue(EtherUnit.gwei, BigInt.from(gasPriceGwei)),
-          maxGas: 200000, // Gas limit
+          maxGas: 500000, // Gas limit aumentado para evitar "out of gas"
           nonce: nonce, // Usar el nonce actual
         ),
         chainId: chainId,

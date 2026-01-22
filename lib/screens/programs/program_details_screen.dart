@@ -771,14 +771,30 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
   }
 
   void _openPdf(String pdfContent) async {
-    // Determinar si es base64 puro o data URL
-    final String dataUrl = pdfContent.startsWith('data:') 
-        ? pdfContent 
-        : 'data:application/pdf;base64,$pdfContent';
-    
     try {
-      print('🔄 Abriendo PDF automáticamente...');
-      print('📄 URL generada: ${dataUrl.substring(0, 100)}...');
+      print('🔄 Abriendo PDF...');
+      print('📄 Contenido recibido: ${pdfContent.substring(0, pdfContent.length > 100 ? 100 : pdfContent.length)}...');
+      
+      // Verificar si es una URL HTTP/HTTPS
+      if (pdfContent.startsWith('http://') || pdfContent.startsWith('https://')) {
+        print('📄 Es una URL HTTP, abriendo directamente...');
+        final Uri pdfUri = Uri.parse(pdfContent);
+        if (await canLaunchUrl(pdfUri)) {
+          await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+          _showInfoSnackBar('PDF abierto en nueva pestaña');
+          print('✅ PDF abierto exitosamente desde URL');
+          return;
+        } else {
+          throw Exception('No se puede abrir la URL');
+        }
+      }
+      
+      // Si es un data URL o base64, procesarlo como blob
+      final String dataUrl = pdfContent.startsWith('data:') 
+          ? pdfContent 
+          : 'data:application/pdf;base64,$pdfContent';
+      
+      print('📄 Procesando como base64/data URL...');
       
       // Usar JavaScript para crear blob URL y abrir en nueva pestaña
       await _openPdfWithBlob(dataUrl);
@@ -786,7 +802,7 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
     } catch (e) {
       print('❌ Error al abrir PDF: $e');
       // Fallback: copiar al portapapeles y mostrar instrucciones
-      _openPdfFallback(dataUrl);
+      _openPdfFallback(pdfContent);
     }
   }
 
@@ -841,10 +857,78 @@ class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
     }
   }
 
-  void _openPdfFallback(String dataUrl) {
+  void _openPdfFallback(String pdfUrl) {
     try {
-      // Copiar URL al portapapeles automáticamente
-      _copyToClipboard(dataUrl);
+      // Si es una URL HTTP, intentar abrirla directamente una vez más
+      if (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://')) {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.picture_as_pdf, color: Colors.red[600]),
+                  SizedBox(width: 8),
+                  Text('Abrir PDF'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.open_in_new,
+                    size: 48,
+                    color: Color(0xff6C4DDC),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No se pudo abrir el PDF automáticamente.',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Haz clic en el botón para abrir el PDF en una nueva pestaña:',
+                    style: TextStyle(fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('Cancelar'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    try {
+                      final Uri pdfUri = Uri.parse(pdfUrl);
+                      if (await canLaunchUrl(pdfUri)) {
+                        await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+                        _showInfoSnackBar('PDF abierto en nueva pestaña');
+                      } else {
+                        _showErrorSnackBar('No se puede abrir la URL');
+                      }
+                    } catch (e) {
+                      _showErrorSnackBar('Error al abrir PDF: $e');
+                    }
+                  },
+                  icon: Icon(Icons.open_in_new, size: 16),
+                  label: Text('Abrir PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xff6C4DDC),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+      
+      // Para data URLs, copiar al portapapeles y mostrar instrucciones
+      _copyToClipboard(pdfUrl);
       
       // Mostrar instrucciones para abrir en nueva pestaña
       showDialog(

@@ -1,0 +1,89 @@
+# Archivos y directorios a ignorar en Docker
+
+# Build artifacts
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+*.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (excepto README principal)
+*.md
+!README.md
+!README_DOCKER.md
+
+# Node modules (si hay)
+node_modules/
+package-lock.json
+
+# Android/iOS builds
+android/
+ios/
+linux/
+macos/
+windows/
+
+# Test files
+test/
+
+# Cache
+.cache/
+*.cache
+
+# Logs
+*.log
+
+# Environment files (se pasan como variables)
+.env
+.env.local
+
+# Firebase config (ya está compilado)
+firebase.json
+.firebaserc
+firestore.rules
+firestore.indexes.json
+
+# SQL files (no necesarios en runtime)
+*.sql
+
+# Hot reload scripts
+hot_reload.bat
+start_flutter_server.bat
+
+# Contracts y artifacts
+contracts/
+artifacts/
+cache/
+
+# Docker files (no copiar dentro de la imagen)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Scripts
+scripts/
+
+# Otros
+8.0.0
+*.dbml
+*.drawio
+*.txt
+!pubspec.yaml
+!pubspec.lock

@@ -9,6 +9,7 @@ import '../../services/emisor_permission_service.dart';
 import '../../services/institution_status_service.dart';
 import '../../services/adapters/auth_adapter.dart';
 import '../../widgets/suspended_institution_widget.dart';
+import '../../widgets/user_info_card.dart';
 import '../certificates/emit_certificate_screen.dart';
 import '../certificates/my_certificates_screen.dart';
 import '../certificates/basic_template_editor_screen.dart';
@@ -161,6 +162,9 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
   }
 
   Widget _buildNormalDashboard(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWeb = screenWidth > 800;
+    
     return Scaffold(
       appBar: AppBar(
         title: Text('Dashboard de Emisor'),
@@ -177,12 +181,13 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
       body: _userContext == null
           ? Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: EdgeInsets.all(16),
+              padding: EdgeInsets.all(isWeb ? 24.0 : 16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Información del emisor
-                  _buildEmisorInfoCard(),
+                  // Información del emisor usando UserInfoCard
+                  if (_userContext != null)
+                    UserInfoCard(userContext: _userContext!, isWeb: isWeb),
                   
                   SizedBox(height: 24),
                   
@@ -199,60 +204,6 @@ class _EmisorDashboardState extends State<EmisorDashboard> {
     );
   }
 
-  Widget _buildEmisorInfoCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-                children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Color(0xff6C4DDC),
-                  child: Text(
-                    (_userContext?.userName ?? 'E').substring(0, 1).toUpperCase(),
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _userContext?.userName ?? 'Emisor',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xff2E2F44),
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                  Text(
-                        _userContext?.currentInstitution?.name ?? 'Institución',
-                    style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildPermissionsCard() {
     if (_permissions.isEmpty) {

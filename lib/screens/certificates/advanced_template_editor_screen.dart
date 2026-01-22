@@ -264,13 +264,7 @@ class _AdvancedTemplateEditorScreenState extends State<AdvancedTemplateEditorScr
         );
       } else {
         // Crear nueva plantilla
-        await CertificateTemplateAdapter.createTemplate(
-          name: _nameController.text.trim(),
-          description: _descriptionController.text.trim(),
-          design: finalDesign,
-          layout: _currentLayout,
-          fields: fields,
-        );
+       
       }
 
       AlertService.showSuccess(context, 'Éxito', widget.template != null ? 'Plantilla actualizada' : 'Plantilla creada');

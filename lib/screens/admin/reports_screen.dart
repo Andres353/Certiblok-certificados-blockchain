@@ -5,6 +5,8 @@ import 'dart:async';
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../../services/alert_service.dart';
 import '../../services/adapters/institution_adapter.dart';
 import '../../models/institution.dart';
@@ -129,6 +131,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: _exportToPdf,
+            icon: Icon(Icons.picture_as_pdf),
+            tooltip: 'Exportar a PDF',
+          ),
           IconButton(
             onPressed: _loadSystemStats,
             icon: Icon(Icons.refresh),
@@ -768,5 +775,289 @@ class _ReportsScreenState extends State<ReportsScreen> {
       return '${address.substring(0, 6)}...${address.substring(address.length - 4)}';
     }
     return address;
+  }
+
+  Future<void> _exportToPdf() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      // Crear documento PDF
+      final pdf = pw.Document();
+      final now = DateTime.now();
+      
+      // Página 1: Portada y Resumen Ejecutivo
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+              // Portada
+              pw.Center(
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      'REPORTE DEL SISTEMA',
+                      style: pw.TextStyle(
+                        fontSize: 32,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Text(
+                      'CertiBlock - Sistema de Certificados Académicos',
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 40),
+                    pw.Text(
+                      'Generado el: ${_formatDate(now)}',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        color: PdfColors.grey600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 40),
+              
+              // Resumen Ejecutivo
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  'Resumen Ejecutivo',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              
+              // Estadísticas principales en tabla
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                children: [
+                  _buildTableRow('Total de Usuarios', '${_stats['total_users'] ?? 0}', true),
+                  _buildTableRow('Estudiantes', '${_stats['students'] ?? 0}'),
+                  _buildTableRow('Emisores', '${_stats['emisors'] ?? 0}'),
+                  _buildTableRow('Administradores', '${_stats['admins'] ?? 0}'),
+                  _buildTableRow('Total Certificados', '${_stats['total_certificates'] ?? 0}', true),
+                  _buildTableRow('Solicitudes Pendientes', '${_stats['pending_requests'] ?? 0}'),
+                  _buildTableRow('Solicitudes Aprobadas', '${_stats['approved_requests'] ?? 0}'),
+                  _buildTableRow('Solicitudes Rechazadas', '${_stats['rejected_requests'] ?? 0}'),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+      
+      // Página 2: Certificados por Institución
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  'Certificados por Institución',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              
+              if (_certificatesByInstitution.isEmpty)
+                pw.Text(
+                  'No hay certificados emitidos aún',
+                  style: pw.TextStyle(fontSize: 14, color: PdfColors.grey600),
+                )
+              else
+                pw.Table(
+                  border: pw.TableBorder.all(color: PdfColors.grey300),
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: [
+                    // Encabezado
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Institución',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Certificados',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Datos
+                    ..._institutions.map((institution) {
+                      int count = _certificatesByInstitution[institution.id] ?? 0;
+                      if (count == 0) return null;
+                      return pw.TableRow(
+                        children: [
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              institution.shortName.isNotEmpty 
+                                  ? institution.shortName 
+                                  : institution.name,
+                              style: pw.TextStyle(fontSize: 11),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              count.toString(),
+                              style: pw.TextStyle(fontSize: 11),
+                              textAlign: pw.TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      );
+                    }).whereType<pw.TableRow>().toList(),
+                  ],
+                ),
+            ];
+          },
+        ),
+      );
+      
+      // Página 3: Estadísticas de Blockchain
+      if (_blockchainStats.isNotEmpty)
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                pw.Header(
+                  level: 1,
+                  child: pw.Text(
+                    'Estadísticas de Blockchain',
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                
+                pw.Table(
+                  border: pw.TableBorder.all(color: PdfColors.grey300),
+                  children: [
+                    _buildTableRow('Red', _blockchainStats['network'] ?? 'N/A'),
+                    _buildTableRow('Chain ID', '${_blockchainStats['chain_id'] ?? 'N/A'}'),
+                    _buildTableRow('Dirección del Contrato', _blockchainStats['contract_address'] ?? 'N/A'),
+                    _buildTableRow('Dirección de Wallet', _blockchainStats['wallet_address'] ?? 'No configurada'),
+                    if (_blockchainStats['balance_matic'] != null)
+                      _buildTableRow(
+                        'Balance',
+                        '${(_blockchainStats['balance_matic'] as double).toStringAsFixed(4)} MATIC',
+                      ),
+                    _buildTableRow('Configurada por', _blockchainStats['wallet_configured_by'] ?? 'N/A'),
+                    _buildTableRow('Costo por Certificado', '~0.006 MATIC (~\$0.004 USD)'),
+                  ],
+                ),
+              ];
+            },
+          ),
+        );
+      
+      // Generar bytes del PDF
+      final pdfBytes = await pdf.save();
+      
+      // Descargar el PDF usando el mismo método que PDFGeneratorService
+      final blob = html.Blob([pdfBytes], 'application/pdf');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', 'reporte_sistema_${_formatDateForFile(now)}.pdf')
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
+      
+      setState(() => _isLoading = false);
+      AlertService.showSuccess(
+        context,
+        'Éxito',
+        'Reporte exportado exitosamente como PDF',
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      print('❌ Error exportando PDF: $e');
+      AlertService.showError(
+        context,
+        'Error',
+        'Error al exportar reporte: $e',
+      );
+    }
+  }
+
+  pw.TableRow _buildTableRow(String label, String value, [bool isHeader = false]) {
+    return pw.TableRow(
+      decoration: isHeader 
+          ? pw.BoxDecoration(color: PdfColors.blue100)
+          : null,
+      children: [
+        pw.Padding(
+          padding: pw.EdgeInsets.all(8),
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontSize: isHeader ? 12 : 11,
+            ),
+          ),
+        ),
+        pw.Padding(
+          padding: pw.EdgeInsets.all(8),
+          child: pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontSize: isHeader ? 12 : 11,
+            ),
+            textAlign: pw.TextAlign.right,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDateForFile(DateTime date) {
+    return '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}_${date.hour.toString().padLeft(2, '0')}${date.minute.toString().padLeft(2, '0')}';
   }
 }

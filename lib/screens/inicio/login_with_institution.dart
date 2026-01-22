@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../../services/adapters/auth_adapter.dart';
+import '../../services/auth_security_service.dart';
 import '../../services/alert_service.dart';
 import '../home_page.dart';
 import 'change_password_page.dart';
@@ -18,6 +19,38 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  String? _securityMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAccountStatus();
+  }
+
+  Future<void> _checkAccountStatus() async {
+    if (_emailController.text.isNotEmpty) {
+      final email = _emailController.text.trim();
+      final isLocked = await AuthSecurityService.isAccountLocked(email);
+      
+      if (isLocked) {
+        final remainingTime = await AuthSecurityService.getRemainingLockoutTime(email);
+        setState(() {
+          _securityMessage = 'Cuenta bloqueada. Intenta de nuevo en ${remainingTime ?? 15} minutos.';
+        });
+      } else {
+        final remainingAttempts = await AuthSecurityService.getRemainingAttempts(email);
+        if (remainingAttempts < 5) {
+          setState(() {
+            _securityMessage = 'Te quedan $remainingAttempts intentos antes del bloqueo.';
+          });
+        } else {
+          setState(() {
+            _securityMessage = null;
+          });
+        }
+      }
+    }
+  }
 
   Future<void> _login() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -25,15 +58,37 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    final email = _emailController.text.trim();
+
+    // Verificar si la cuenta está bloqueada antes de intentar login
+    final isLocked = await AuthSecurityService.isAccountLocked(email);
+    if (isLocked) {
+      final remainingTime = await AuthSecurityService.getRemainingLockoutTime(email);
+      _showError(
+        'Cuenta bloqueada por múltiples intentos fallidos.\n'
+        'Intenta de nuevo en ${remainingTime ?? 15} minutos.',
+      );
+      _checkAccountStatus();
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _securityMessage = null;
+    });
 
     try {
       final userContext = await AuthAdapter.loginWithContext(
-        _emailController.text.trim(),
+        email,
         _passwordController.text.trim(),
       );
 
       if (userContext != null) {
+        // Limpiar mensaje de seguridad al login exitoso
+        setState(() {
+          _securityMessage = null;
+        });
+
         // Verificar si necesita cambiar contraseña
         if (userContext.mustChangePassword == true) {
           Navigator.pushReplacement(
@@ -49,10 +104,36 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
           );
         }
       } else {
-        _showError('Credenciales incorrectas');
+        // Login fallido, verificar intentos restantes
+        final remainingAttempts = await AuthSecurityService.getRemainingAttempts(email);
+        final isStillLocked = await AuthSecurityService.isAccountLocked(email);
+        
+        if (isStillLocked) {
+          final remainingTime = await AuthSecurityService.getRemainingLockoutTime(email);
+          _showError(
+            'Cuenta bloqueada por múltiples intentos fallidos.\n'
+            'Intenta de nuevo en ${remainingTime ?? 15} minutos.',
+          );
+        } else if (remainingAttempts > 0) {
+          _showError(
+            'Credenciales incorrectas.\n'
+            'Te quedan $remainingAttempts intentos antes del bloqueo.',
+          );
+        } else {
+          _showError('Credenciales incorrectas');
+        }
+        
+        _checkAccountStatus();
       }
     } catch (e) {
-      _showError('Error al iniciar sesión: $e');
+      // Manejar excepciones específicas de bloqueo
+      final errorMessage = e.toString();
+      if (errorMessage.contains('bloqueada')) {
+        _showError(errorMessage);
+        _checkAccountStatus();
+      } else {
+        _showError('Error al iniciar sesión: $e');
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -124,6 +205,10 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
                         fillColor: Colors.grey[50],
                       ),
                       keyboardType: TextInputType.emailAddress,
+                      onChanged: (_) {
+                        // Verificar estado de cuenta cuando cambia el email
+                        _checkAccountStatus();
+                      },
                     ),
                     SizedBox(height: 16),
 
@@ -151,6 +236,52 @@ class _LoginWithInstitutionState extends State<LoginWithInstitution> {
                       ),
                       obscureText: _obscurePassword,
                     ),
+                    
+                    // Mensaje de seguridad
+                    if (_securityMessage != null) ...[
+                      SizedBox(height: 16),
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _securityMessage!.contains('bloqueada')
+                              ? Colors.red[50]
+                              : Colors.orange[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _securityMessage!.contains('bloqueada')
+                                ? Colors.red[300]!
+                                : Colors.orange[300]!,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _securityMessage!.contains('bloqueada')
+                                  ? Icons.lock
+                                  : Icons.warning,
+                              color: _securityMessage!.contains('bloqueada')
+                                  ? Colors.red[700]
+                                  : Colors.orange[700],
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _securityMessage!,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _securityMessage!.contains('bloqueada')
+                                      ? Colors.red[900]
+                                      : Colors.orange[900],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    
                     SizedBox(height: 24),
 
                     // Botón de login

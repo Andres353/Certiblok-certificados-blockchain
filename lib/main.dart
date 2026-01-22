@@ -29,10 +29,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    // Inicializar Firebase
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+  // Inicializar Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
     print('✅ Firebase inicializado correctamente');
   } catch (e, stackTrace) {
     print('❌ Error inicializando Firebase: $e');
@@ -41,8 +41,8 @@ void main() async {
   }
 
   try {
-    // Inicializar Supabase
-    await SupabaseConfig.initialize();
+  // Inicializar Supabase
+  await SupabaseConfig.initialize();
     print('✅ Supabase inicializado correctamente');
   } catch (e, stackTrace) {
     print('❌ Error inicializando Supabase: $e');
@@ -51,8 +51,8 @@ void main() async {
   }
 
   try {
-    // Activar Supabase automáticamente
-    await SetupAuth.enableSupabaseAuth();
+  // Activar Supabase automáticamente
+  await SetupAuth.enableSupabaseAuth();
     print('✅ Supabase Auth activado');
   } catch (e, stackTrace) {
     print('❌ Error activando Supabase Auth: $e');
@@ -61,7 +61,7 @@ void main() async {
 
   try {
     // Inicializar datos de ejemplo en la base de datos (silenciosamente)
-    await DatabaseInitializer.initializeSampleData();
+  await DatabaseInitializer.initializeSampleData();
   } catch (e) {
     // Solo mostrar error si no es un error esperado (datos ya existen)
     final errorStr = e.toString().toLowerCase();
@@ -73,7 +73,7 @@ void main() async {
   
   try {
     // Inicializar Super Admin (silenciosamente)
-    await SuperAdminInitializer.initializeSuperAdmin();
+  await SuperAdminInitializer.initializeSuperAdmin();
   } catch (e) {
     // Solo mostrar error si no es un error esperado (usuario ya existe)
     final errorStr = e.toString().toLowerCase();
@@ -85,8 +85,8 @@ void main() async {
   }
 
   try {
-    // Cargar contexto del usuario si existe
-    await UserContextService.loadUserContext();
+  // Cargar contexto del usuario si existe
+  await UserContextService.loadUserContext();
     print('✅ Contexto de usuario cargado');
   } catch (e, stackTrace) {
     print('❌ Error cargando contexto de usuario: $e');
@@ -115,28 +115,28 @@ class _MyAppState extends State<MyApp> {
 
   Future<Widget> _getInitialRoute() async {
     try {
-      // Verificar si la URL actual es una verificación de certificados
-      final uri = Uri.base;
-      final fragment = uri.fragment;
-      
-      // Verificar si es una URL de verificación de certificados (con hash routing)
-      if (fragment.startsWith('/verify/certificate/')) {
-        final fragmentSegments = fragment.split('/');
-        if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificate') {
-          final certificateId = fragmentSegments[3];
-          return _CertificateLoadingScreen(certificateId: certificateId);
-        }
+    // Verificar si la URL actual es una verificación de certificados
+    final uri = Uri.base;
+    final fragment = uri.fragment;
+    
+    // Verificar si es una URL de verificación de certificados (con hash routing)
+    if (fragment.startsWith('/verify/certificate/')) {
+      final fragmentSegments = fragment.split('/');
+      if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificate') {
+        final certificateId = fragmentSegments[3];
+        return _CertificateLoadingScreen(certificateId: certificateId);
       }
-      
-      // Verificar si es una URL de verificación de múltiples certificados
-      if (fragment.startsWith('/verify/certificates/')) {
-        final fragmentSegments = fragment.split('/');
-        if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificates') {
-          final certificateIds = fragmentSegments[3];
-          return _CertificateLoadingScreen(certificateId: certificateIds, isMultiple: true);
-        }
+    }
+    
+    // Verificar si es una URL de verificación de múltiples certificados
+    if (fragment.startsWith('/verify/certificates/')) {
+      final fragmentSegments = fragment.split('/');
+      if (fragmentSegments.length >= 4 && fragmentSegments[1] == 'verify' && fragmentSegments[2] == 'certificates') {
+        final certificateIds = fragmentSegments[3];
+        return _CertificateLoadingScreen(certificateId: certificateIds, isMultiple: true);
       }
-      
+    }
+    
       // Verificar si hay un usuario autenticado
       // Primero verificar la sesión de Supabase (fuente de verdad)
       final supabase = Supabase.instance.client;
@@ -145,9 +145,9 @@ class _MyAppState extends State<MyApp> {
       if (currentUser == null) {
         // No hay sesión activa en Supabase, limpiar contexto y mostrar login
         await UserContextService.clearUserContext();
-        return const MainMenu();
-      }
-      
+    return const MainMenu();
+  }
+
       // Hay sesión en Supabase, verificar contexto
       // Intentar cargar contexto con timeout para evitar bucles infinitos
       try {

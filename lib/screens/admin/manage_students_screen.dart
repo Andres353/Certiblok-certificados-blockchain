@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/user_context_service.dart';
+import 'csv_import_students_screen.dart';
 
 class ManageStudentsScreen extends StatefulWidget {
   const ManageStudentsScreen({Key? key}) : super(key: key);
@@ -92,6 +93,21 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         backgroundColor: Color(0xff6C4DDC),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(Icons.upload_file),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CsvImportStudentsScreen(),
+                ),
+              ).then((_) {
+                // Recargar estudiantes después de importar
+                _loadStudents();
+              });
+            },
+            tooltip: 'Importar desde CSV',
+          ),
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: _loadStudents,

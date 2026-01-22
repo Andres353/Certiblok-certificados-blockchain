@@ -53,7 +53,7 @@ class ApplicationService {
       // canStudentApply ahora lanza excepciones específicas en lugar de retornar false
       await SupabaseProgramsService.canStudentApply(programId, context.userId);
 
-      // Subir CV a Firebase Storage
+      // Subir CV a Supabase Storage
       final cvUrl = await _uploadCV(cvFilePath, cvFileBytes, context.userId, cvFileName);
 
       // Obtener detalles de los certificados seleccionados
@@ -136,19 +136,20 @@ class ApplicationService {
       }
       
       // Validar tamaño (igual que PDFs de programas: max 700KB)
-      const int maxSize = 700000; // 700KB para base64
+      // Validar tamaño del archivo (máximo 50MB para Supabase Storage)
+      const int maxSize = 50 * 1024 * 1024; // 50MB para Supabase Storage
       if (bytes.length > maxSize) {
-        throw Exception('El CV es demasiado grande (${(bytes.length / 1024).toStringAsFixed(1)}KB). El límite es ${(maxSize / 1024).toStringAsFixed(1)}KB. Por favor, comprime el archivo o usa uno más pequeño.');
+        throw Exception('El CV es demasiado grande (${(bytes.length / 1024 / 1024).toStringAsFixed(1)}MB). El límite es ${(maxSize / 1024 / 1024).toStringAsFixed(0)}MB. Por favor, comprime el archivo o usa uno más pequeño.');
       }
       
-      // Procesar PDF usando el mismo método que certificados y pasantías (base64 puro)
-      final pdfData = await ImageUploadService.uploadPdfBytes(
+      // Subir PDF a Supabase Storage
+      final pdfUrl = await ImageUploadService.uploadPdfBytes(
         bytes,
         'applications/cv/$studentId/$fileName',
       );
       
-      print('✅ CV procesado exitosamente (base64)');
-      return pdfData; // Retornar base64 string como URL (igual que pasantías)
+      print('✅ CV subido exitosamente a Supabase Storage');
+      return pdfUrl; // Retornar URL de Supabase Storage
     } catch (e, stackTrace) {
       print('❌ Error al subir CV: $e');
       print('Stack trace: $stackTrace');

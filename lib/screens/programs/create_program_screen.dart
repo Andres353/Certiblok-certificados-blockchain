@@ -1123,17 +1123,17 @@ class _CreateProgramScreenState extends State<CreateProgramScreen> {
       print('🔄 Iniciando subida de PDF: $fileName');
       print('📊 Tamaño del archivo: ${bytes.length} bytes');
 
-      // Procesar PDF usando el mismo método que certificados (base64 puro)
-      final pdfData = await ImageUploadService.uploadPdfBytes(
+      // Subir PDF a Supabase Storage
+      final pdfUrl = await ImageUploadService.uploadPdfBytes(
         bytes,
         'program_pdfs/${context!.institutionId}_${DateTime.now().millisecondsSinceEpoch}_$fileName',
       );
       
-      print('✅ PDF procesado exitosamente');
-      print('🔗 Base64 generado: ${pdfData.substring(0, 100)}...');
+      print('✅ PDF subido exitosamente a Supabase Storage');
+      print('🔗 URL: $pdfUrl');
 
       setState(() {
-        _pdfData = pdfData; // Almacenar base64 puro
+        _pdfData = pdfUrl; // Almacenar URL de Supabase Storage
         _pdfFileName = fileName;
         _isUploadingPdf = false;
       });

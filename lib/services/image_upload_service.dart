@@ -1,17 +1,22 @@
 // lib/services/image_upload_service.dart
 // Servicio para manejo de imágenes y logos de instituciones
+// MIGRADO A SUPABASE STORAGE
 
 import 'dart:typed_data';
-import 'dart:convert';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
+import 'supabase/supabase_storage_service.dart';
 
 class ImageUploadService {
-  static final FirebaseStorage _storage = FirebaseStorage.instance;
   static final ImagePicker _picker = ImagePicker();
+
+  // Buckets organizados en Supabase
+  static const String _logosBucket = 'institution-logos';
+  static const String _imagesBucket = 'images';
+  static const String _pdfsBucket = 'pdfs';
+  static const String _signaturesBucket = 'signatures';
 
   // Subir imagen desde galería
   static Future<String?> pickAndUploadImage({
@@ -39,30 +44,51 @@ class ImageUploadService {
       print('✅ Imagen seleccionada: ${image.name}');
       
       // Leer bytes de la imagen
-      final Uint8List imageBytes = await image.readAsBytes();
-      print('📊 Tamaño de imagen: ${imageBytes.length} bytes');
+      Uint8List imageBytes = await image.readAsBytes();
+      print('📊 Tamaño original: ${imageBytes.length} bytes');
+      
+      // Comprimir imagen automáticamente
+      imageBytes = await compressImage(imageBytes, maxWidth: maxWidth, maxHeight: maxHeight, quality: quality);
+      print('📊 Tamaño después de compresión: ${imageBytes.length} bytes');
       
       // Validar tamaño
       if (!isValidImageSize(imageBytes)) {
         throw Exception('La imagen es demasiado grande. Máximo 5MB permitido.');
       }
       
-      // Generar nombre único
-      final String fileName = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(image.name)}';
-      print('📁 Nombre de archivo: $fileName');
+      // Determinar bucket según el tipo
+      String bucket = _getBucketForFolder(folder);
       
-      // Subir a Firebase Storage
-      print('⬆️ Subiendo a Firebase Storage...');
-      final String downloadUrl = await uploadImageBytes(
-        imageBytes, 
-        '$folder/$fileName',
+      // Generar nombre único
+      final String baseName = path.basenameWithoutExtension(image.name);
+      final String fileName = '${DateTime.now().millisecondsSinceEpoch}_$baseName.jpg';
+      final String filePath = folder.isEmpty ? fileName : '$folder/$fileName';
+      
+      print('📁 Subiendo a Supabase Storage...');
+      print('   Bucket: $bucket');
+      print('   Path: $filePath');
+      
+      // NO requerir autenticación - todas las subidas son públicas
+      bool requireAuth = false;
+      
+      // Subir a Supabase Storage
+      final String? downloadUrl = await SupabaseStorageService.uploadFile(
+        bucket: bucket,
+        path: filePath,
+        fileBytes: imageBytes,
+        contentType: 'image/jpeg',
+        requireAuth: requireAuth,
       );
 
-      print('✅ Imagen subida exitosamente');
+      if (downloadUrl == null) {
+        throw Exception('No se pudo obtener la URL de la imagen subida');
+      }
+
+      print('✅ Imagen subida exitosamente: $downloadUrl');
       return downloadUrl;
     } catch (e) {
       print('❌ Error al seleccionar y subir imagen: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -88,55 +114,88 @@ class ImageUploadService {
 
       if (image == null) return null;
 
-      final Uint8List imageBytes = await image.readAsBytes();
-      final String fileName = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(image.name)}';
+      Uint8List imageBytes = await image.readAsBytes();
       
-      return await uploadImageBytes(imageBytes, '$folder/$fileName');
+      // Comprimir imagen automáticamente
+      imageBytes = await compressImage(imageBytes, maxWidth: maxWidth, maxHeight: maxHeight, quality: quality);
+      
+      String bucket = _getBucketForFolder(folder);
+      final String baseName = path.basenameWithoutExtension(image.path);
+      final String fileName = '${DateTime.now().millisecondsSinceEpoch}_$baseName.jpg';
+      final String filePath = folder.isEmpty ? fileName : '$folder/$fileName';
+      
+      // NO requerir autenticación - todas las subidas son públicas
+      bool requireAuth = false;
+      
+      final String? downloadUrl = await SupabaseStorageService.uploadFile(
+        bucket: bucket,
+        path: filePath,
+        fileBytes: imageBytes,
+        contentType: 'image/jpeg',
+        requireAuth: requireAuth,
+      );
+
+      return downloadUrl;
     } catch (e) {
-      print('Error al tomar foto y subir: $e');
+      print('❌ Error al tomar foto y subir: $e');
       return null;
     }
   }
 
-  // Subir bytes de imagen
-  static Future<String> uploadImageBytes(Uint8List imageBytes, String path) async {
+  // Subir bytes de imagen (método principal)
+  static Future<String> uploadImageBytes(Uint8List imageBytes, String filePathParam) async {
     try {
-      final Reference ref = _storage.ref().child(path);
+      print('🔄 Subiendo imagen a Supabase Storage...');
+      print('📊 Tamaño original: ${imageBytes.length} bytes');
       
-      // Configurar metadatos para mejor compatibilidad con web
-      final metadata = SettableMetadata(
-        contentType: 'image/png',
-        cacheControl: 'public, max-age=31536000',
-      );
-      
-      // Para web, usar putString con base64 como alternativa
-      if (kIsWeb) {
-        final String base64String = base64Encode(imageBytes);
-        final String dataUrl = 'data:image/png;base64,$base64String';
-        
-        // Guardar la URL base64 en Firestore como alternativa temporal
-        await FirebaseFirestore.instance
-            .collection('temp_images')
-            .add({
-          'dataUrl': dataUrl,
-          'path': path,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        
-        return dataUrl; // Retornar data URL temporal
-      } else {
-        // Para móvil, usar el método normal
-        final UploadTask uploadTask = ref.putData(
-          imageBytes,
-          metadata,
-        );
-        
-        final TaskSnapshot snapshot = await uploadTask;
-        final String downloadUrl = await snapshot.ref.getDownloadURL();
-        
-        print('✅ Imagen subida exitosamente: $downloadUrl');
-        return downloadUrl;
+      // Comprimir imagen automáticamente si es muy grande
+      if (imageBytes.length > 500 * 1024) { // Si es mayor a 500KB
+        print('🔄 Comprimiendo imagen automáticamente...');
+        imageBytes = await compressImage(imageBytes);
+        print('📊 Tamaño después de compresión: ${imageBytes.length} bytes');
       }
+      
+      // Determinar bucket y path
+      final parts = filePathParam.split('/');
+      String bucket = _imagesBucket;
+      String filePath = filePathParam;
+      
+      if (parts.isNotEmpty) {
+        if (parts[0].contains('logo') || parts[0].contains('institution')) {
+          bucket = _logosBucket;
+        } else if (parts[0].contains('signature')) {
+          bucket = _signaturesBucket;
+        }
+      }
+      
+      // Asegurar extensión .jpg para mejor compresión
+      if (!filePath.toLowerCase().endsWith('.jpg') && !filePath.toLowerCase().endsWith('.jpeg')) {
+        final baseName = path.basenameWithoutExtension(filePath);
+        final dirName = path.dirname(filePath);
+        filePath = dirName == '.' ? '$baseName.jpg' : '$dirName/$baseName.jpg';
+      }
+      
+      print('   Bucket: $bucket');
+      print('   Path: $filePath');
+      
+      // NO requerir autenticación - todas las subidas son públicas
+      bool requireAuth = false;
+      
+      // Subir a Supabase Storage
+      final String? downloadUrl = await SupabaseStorageService.uploadFile(
+        bucket: bucket,
+        path: filePath,
+        fileBytes: imageBytes,
+        contentType: 'image/jpeg',
+        requireAuth: requireAuth,
+      );
+
+      if (downloadUrl == null) {
+        throw Exception('No se pudo obtener la URL de la imagen subida');
+      }
+
+      print('✅ Imagen subida exitosamente: $downloadUrl');
+      return downloadUrl;
     } catch (e) {
       print('❌ Error al subir imagen: $e');
       throw Exception('Error al subir imagen: $e');
@@ -146,10 +205,35 @@ class ImageUploadService {
   // Eliminar imagen
   static Future<void> deleteImage(String imageUrl) async {
     try {
-      final Reference ref = _storage.refFromURL(imageUrl);
-      await ref.delete();
+      // Extraer bucket y path de la URL
+      final uri = Uri.parse(imageUrl);
+      final pathSegments = uri.pathSegments;
+      
+      if (pathSegments.length < 2) {
+        print('⚠️ URL de imagen no válida para eliminar: $imageUrl');
+        return;
+      }
+      
+      // El bucket suele estar en el path
+      String bucket = _imagesBucket;
+      String filePath = pathSegments.last;
+      
+      // Intentar determinar el bucket desde la URL
+      if (imageUrl.contains('institution-logos') || imageUrl.contains('logo')) {
+        bucket = _logosBucket;
+      } else if (imageUrl.contains('signature')) {
+        bucket = _signaturesBucket;
+      }
+      
+      await SupabaseStorageService.deleteFile(
+        bucket: bucket,
+        path: filePath,
+      );
+      
+      print('✅ Imagen eliminada exitosamente');
     } catch (e) {
-      print('Error al eliminar imagen: $e');
+      print('⚠️ Error al eliminar imagen: $e');
+      // No lanzar excepción, solo loguear el error
     }
   }
 
@@ -159,8 +243,9 @@ class ImageUploadService {
     int height = 200,
     String quality = 'auto',
   }) {
-    // Para Firebase Storage, podemos usar parámetros de consulta
-    // o implementar Cloud Functions para redimensionamiento
+    // Supabase Storage no tiene transformaciones automáticas como Firebase
+    // Retornar la URL original por ahora
+    // En el futuro se podría usar Supabase Edge Functions para redimensionamiento
     return originalUrl;
   }
 
@@ -176,7 +261,76 @@ class ImageUploadService {
     return imageBytes.length <= maxSizeBytes;
   }
 
-  // Comprimir imagen si es necesario
+  // Comprimir imagen automáticamente
+  static Future<Uint8List> compressImage(
+    Uint8List imageBytes, {
+    int? maxWidth,
+    int? maxHeight,
+    int quality = 85,
+  }) async {
+    try {
+      // Decodificar imagen
+      img.Image? image = img.decodeImage(imageBytes);
+      if (image == null) {
+        print('⚠️ No se pudo decodificar la imagen, retornando original');
+        return imageBytes;
+      }
+
+      // Redimensionar si es necesario
+      if (maxWidth != null || maxHeight != null) {
+        final currentWidth = image.width;
+        final currentHeight = image.height;
+        
+        int targetWidth = maxWidth ?? currentWidth;
+        int targetHeight = maxHeight ?? currentHeight;
+        
+        // Mantener aspect ratio
+        if (maxWidth != null && maxHeight != null) {
+          final aspectRatio = currentWidth / currentHeight;
+          if (currentWidth > maxWidth || currentHeight > maxHeight) {
+            if (currentWidth / maxWidth > currentHeight / maxHeight) {
+              targetWidth = maxWidth;
+              targetHeight = (maxWidth / aspectRatio).round();
+            } else {
+              targetHeight = maxHeight;
+              targetWidth = (maxHeight * aspectRatio).round();
+            }
+          } else {
+            targetWidth = currentWidth;
+            targetHeight = currentHeight;
+          }
+        } else if (maxWidth != null && currentWidth > maxWidth) {
+          targetHeight = (currentHeight * maxWidth / currentWidth).round();
+          targetWidth = maxWidth;
+        } else if (maxHeight != null && currentHeight > maxHeight) {
+          targetWidth = (currentWidth * maxHeight / currentHeight).round();
+          targetHeight = maxHeight;
+        } else {
+          targetWidth = currentWidth;
+          targetHeight = currentHeight;
+        }
+        
+        if (targetWidth != currentWidth || targetHeight != currentHeight) {
+          print('🔄 Redimensionando imagen: ${currentWidth}x${currentHeight} -> ${targetWidth}x${targetHeight}');
+          image = img.copyResize(image, width: targetWidth, height: targetHeight);
+        }
+      }
+
+      // Comprimir como JPEG (mejor compresión)
+      final compressedBytes = Uint8List.fromList(
+        img.encodeJpg(image, quality: quality),
+      );
+
+      print('✅ Imagen comprimida: ${imageBytes.length} bytes -> ${compressedBytes.length} bytes');
+      return compressedBytes;
+    } catch (e) {
+      print('⚠️ Error al comprimir imagen: $e');
+      // Retornar original si falla la compresión
+      return imageBytes;
+    }
+  }
+
+  // Comprimir imagen si es necesario (método legacy, ahora usa compressImage)
   static Future<Uint8List> compressImageIfNeeded(Uint8List imageBytes, {
     int maxSizeMB = 2,
   }) async {
@@ -184,87 +338,90 @@ class ImageUploadService {
       return imageBytes;
     }
 
-    // Aquí podrías implementar compresión con packages como:
-    // - flutter_image_compress
-    // - image
-    // Por ahora retornamos la imagen original
-    return imageBytes;
+    // Comprimir automáticamente
+    return await compressImage(imageBytes, quality: 80);
   }
 
-  // Subir PDF específicamente - usando EXACTAMENTE el mismo método que emisión de certificados
-  static Future<String> uploadPdfBytes(Uint8List pdfBytes, String path) async {
+  // Subir PDF a Supabase Storage (ahora usa Storage en lugar de base64)
+  static Future<String> uploadPdfBytes(Uint8List pdfBytes, String filePathParam) async {
     try {
-      print('🔄 Procesando PDF para pasantías (mismo método que certificados)...');
+      print('🔄 Procesando PDF para Supabase Storage...');
       print('📊 Tamaño del archivo: ${pdfBytes.length} bytes');
       
-      // Verificar límite de Firestore (1MB por documento, ~700KB para base64)
-      // Límite más conservador para evitar errores de Firestore
-      const int maxFirestoreSize = 700000; // 700KB para base64
-      if (pdfBytes.length > maxFirestoreSize) {
-        print('⚠️ PDF grande detectado (${pdfBytes.length} bytes > $maxFirestoreSize)');
-        print('🔄 Aplicando compresión y optimización...');
-        
-        // Aplicar compresión más agresiva
-        final compressedBytes = await _compressPdfAggressive(pdfBytes);
-        if (compressedBytes.length <= maxFirestoreSize) {
-          print('✅ PDF comprimido exitosamente: ${compressedBytes.length} bytes');
-          pdfBytes = compressedBytes;
-        } else {
-          print('❌ PDF sigue siendo muy grande después de compresión: ${compressedBytes.length} bytes');
-          print('💡 Sugerencia: Comprime el PDF manualmente o usa un archivo más pequeño');
-          throw Exception('El PDF es demasiado grande (${(pdfBytes.length / 1024).toStringAsFixed(1)}KB). El límite es ${(maxFirestoreSize / 1024).toStringAsFixed(1)}KB. Por favor, comprime el PDF manualmente o usa un archivo más pequeño.');
+      // Límite de Supabase: 50MB en plan gratuito, 5GB en plan Pro
+      const int maxSupabaseSize = 50 * 1024 * 1024; // 50MB
+      if (pdfBytes.length > maxSupabaseSize) {
+        throw Exception('El PDF es demasiado grande (${(pdfBytes.length / 1024 / 1024).toStringAsFixed(1)}MB). El límite es ${(maxSupabaseSize / 1024 / 1024).toStringAsFixed(0)}MB. Por favor, comprime el PDF manualmente.');
+      }
+      
+      // Determinar bucket y path
+      final parts = filePathParam.split('/');
+      String bucket = _pdfsBucket;
+      String filePath = filePathParam;
+      
+      if (parts.isNotEmpty) {
+        if (parts[0].contains('cv') || parts[0].contains('curriculum')) {
+          filePath = 'cvs/${path.basename(filePath)}';
+        } else if (parts[0].contains('motivation') || parts[0].contains('carta')) {
+          filePath = 'motivation-letters/${path.basename(filePath)}';
+        } else if (parts[0].contains('program')) {
+          filePath = 'programs/${path.basename(filePath)}';
         }
       }
       
-      // Simular progreso de procesamiento (igual que certificados)
-      await Future.delayed(Duration(milliseconds: 1500));
+      // Asegurar extensión .pdf
+      if (!filePath.toLowerCase().endsWith('.pdf')) {
+        final baseName = path.basenameWithoutExtension(filePath);
+        final dirName = path.dirname(filePath);
+        filePath = dirName == '.' ? '$baseName.pdf' : '$dirName/$baseName.pdf';
+      }
       
-      // Convertir bytes a base64 para almacenar (EXACTAMENTE igual que en emisión de certificados)
-      // En certificados se almacena como base64 puro, NO como data URL
-      final String base64String = base64Encode(pdfBytes);
+      // Generar nombre único si no tiene timestamp
+      if (!filePath.contains(DateTime.now().millisecondsSinceEpoch.toString())) {
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = path.basename(filePath);
+        final dirName = path.dirname(filePath);
+        filePath = dirName == '.' ? '${timestamp}_$fileName' : '$dirName/${timestamp}_$fileName';
+      }
       
-      print('✅ PDF procesado exitosamente (método certificados)');
-      print('🔗 Base64 generado: ${base64String.substring(0, 100)}...');
-      print('📝 Método: Base64 puro (IDÉNTICO a emisión de certificados)');
-      print('📏 Longitud total: ${base64String.length} caracteres');
+      print('   Bucket: $bucket');
+      print('   Path: $filePath');
       
-      // Retornar base64 puro, igual que en certificados
-      return base64String;
+      // NO requerir autenticación - todas las subidas son públicas
+      bool requireAuth = false;
+      
+      // Subir a Supabase Storage
+      final String? downloadUrl = await SupabaseStorageService.uploadFile(
+        bucket: bucket,
+        path: filePath,
+        fileBytes: pdfBytes,
+        contentType: 'application/pdf',
+        requireAuth: requireAuth,
+      );
+
+      if (downloadUrl == null) {
+        throw Exception('No se pudo obtener la URL del PDF subido');
+      }
+
+      print('✅ PDF subido exitosamente: $downloadUrl');
+      print('📝 Método: Supabase Storage (no base64)');
+      
+      // Retornar URL de Supabase Storage
+      return downloadUrl;
     } catch (e) {
       print('❌ Error al procesar PDF: $e');
       throw Exception('Error al procesar PDF: $e');
     }
   }
 
-  // Comprimir PDF de forma agresiva
-  static Future<Uint8List> _compressPdfAggressive(Uint8List pdfBytes) async {
-    try {
-      print('🔄 Aplicando compresión agresiva al PDF...');
-      
-      // Estrategia de compresión agresiva:
-      // 1. Intentar reducir la calidad de las imágenes dentro del PDF
-      // 2. Eliminar metadatos innecesarios
-      // 3. Optimizar la estructura del PDF
-      
-      // Por ahora, implementamos una compresión básica simulada
-      // En el futuro se podría usar: pdf_compress, flutter_pdfview, etc.
-      
-      // Simular compresión del 20-30%
-      final double compressionRatio = 0.75; // Reducir a 75% del tamaño original
-      final int targetSize = (pdfBytes.length * compressionRatio).round();
-      
-      print('📊 Tamaño original: ${pdfBytes.length} bytes');
-      print('🎯 Tamaño objetivo: $targetSize bytes');
-      
-      // Simular compresión (en realidad no comprime, solo para demostración)
-      print('⚠️ Compresión real no implementada, retornando archivo original');
-      print('💡 Para PDFs grandes, comprime manualmente usando herramientas online');
-      
-      return pdfBytes;
-    } catch (e) {
-      print('❌ Error en compresión agresiva: $e');
-      return pdfBytes; // Retornar original en caso de error
+  // Determinar bucket según el folder
+  static String _getBucketForFolder(String folder) {
+    if (folder.contains('logo') || folder.contains('institution')) {
+      return _logosBucket;
+    } else if (folder.contains('signature')) {
+      return _signaturesBucket;
+    } else {
+      return _imagesBucket;
     }
   }
-
 }

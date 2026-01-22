@@ -1,7 +1,10 @@
 // lib/screens/admin/system_reports_screen.dart
 // Pantalla de reportes del sistema para administradores
 
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../../services/adapters/certificate_adapter.dart';
 import '../../services/adapters/institution_adapter.dart';
 import '../../services/user_context_service.dart';
@@ -153,6 +156,11 @@ class _SystemReportsScreenState extends State<SystemReportsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: _exportToPdf,
+            icon: Icon(Icons.picture_as_pdf),
+            tooltip: 'Exportar a PDF',
+          ),
           IconButton(
             onPressed: _loadReports,
             icon: Icon(Icons.refresh),
@@ -671,5 +679,419 @@ class _SystemReportsScreenState extends State<SystemReportsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _exportToPdf() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      // Crear documento PDF
+      final pdf = pw.Document();
+      final now = DateTime.now();
+      final institutionName = _reports['institution'] ?? 'Institución';
+      final certificatesByType = _reports['certificatesByType'] as Map<String, int>;
+      
+      // Página 1: Portada y Resumen Ejecutivo
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+              // Portada
+              pw.Center(
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      'REPORTE DE INSTITUCIÓN',
+                      style: pw.TextStyle(
+                        fontSize: 32,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Text(
+                      institutionName,
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Text(
+                      'CertiBlock - Sistema de Certificados Académicos',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 40),
+                    pw.Text(
+                      'Generado el: ${_formatDate(now)}',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        color: PdfColors.grey600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 40),
+              
+              // Resumen Ejecutivo
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  'Resumen Ejecutivo',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              
+              // Estadísticas principales en tabla
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                children: [
+                  _buildTableRow('Total Certificados', '${_reports['totalCertificates'] ?? 0}', true),
+                  _buildTableRow('Certificados Activos', '${_reports['activeCertificates'] ?? 0}'),
+                  _buildTableRow('Certificados Revocados', '${_reports['revokedCertificates'] ?? 0}'),
+                  _buildTableRow('Certificados Expirados', '${_reports['expiredCertificates'] ?? 0}'),
+                  _buildTableRow('Total Emisores', '${_reports['totalEmitters'] ?? 0}', true),
+                  _buildTableRow('Total Estudiantes', '${_reports['totalStudents'] ?? 0}'),
+                  if (_reports['firstCertificate'] != null)
+                    _buildTableRow(
+                      'Primer Certificado',
+                      _formatDate(_reports['firstCertificate'] as DateTime),
+                    ),
+                  if (_reports['lastCertificate'] != null)
+                    _buildTableRow(
+                      'Último Certificado',
+                      _formatDate(_reports['lastCertificate'] as DateTime),
+                    ),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+      
+      // Página 2: Top Emisores
+      if (_topEmitters.isNotEmpty)
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                pw.Header(
+                  level: 1,
+                  child: pw.Text(
+                    'Top Emisores',
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                
+                pw.Table(
+                  border: pw.TableBorder.all(color: PdfColors.grey300),
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: [
+                    // Encabezado
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Emisor',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Certificados',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Datos
+                    ..._topEmitters.take(10).map((emitter) => pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            emitter['name'] ?? 'Emisor Desconocido',
+                            style: pw.TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '${emitter['count'] ?? 0}',
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    )).toList(),
+                  ],
+                ),
+              ];
+            },
+          ),
+        );
+      
+      // Página 3: Top Estudiantes
+      if (_topStudents.isNotEmpty)
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                pw.Header(
+                  level: 1,
+                  child: pw.Text(
+                    'Estudiantes con Más Certificados',
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                
+                pw.Table(
+                  border: pw.TableBorder.all(color: PdfColors.grey300),
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: [
+                    // Encabezado
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Estudiante',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Certificados',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Datos
+                    ..._topStudents.take(10).map((student) => pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            student['name'] ?? 'Estudiante Desconocido',
+                            style: pw.TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '${student['count'] ?? 0}',
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    )).toList(),
+                  ],
+                ),
+              ];
+            },
+          ),
+        );
+      
+      // Página 4: Certificados por Tipo
+      if (certificatesByType.isNotEmpty)
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                pw.Header(
+                  level: 1,
+                  child: pw.Text(
+                    'Certificados por Tipo',
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                
+                pw.Table(
+                  border: pw.TableBorder.all(color: PdfColors.grey300),
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: [
+                    // Encabezado
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(color: PdfColors.blue100),
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Tipo de Certificado',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            'Cantidad',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Datos
+                    ...certificatesByType.entries.map((entry) => pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            entry.key,
+                            style: pw.TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            entry.value.toString(),
+                            style: pw.TextStyle(fontSize: 11),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    )).toList(),
+                  ],
+                ),
+              ];
+            },
+          ),
+        );
+      
+      // Generar bytes del PDF
+      final pdfBytes = await pdf.save();
+      
+      // Descargar el PDF usando el mismo método que PDFGeneratorService
+      final blob = html.Blob([pdfBytes], 'application/pdf');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final fileName = 'reporte_${institutionName.replaceAll(' ', '_')}_${_formatDateForFile(now)}.pdf';
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
+      
+      setState(() => _isLoading = false);
+      AlertService.showSuccess(
+        context,
+        'Éxito',
+        'Reporte exportado exitosamente como PDF',
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      print('❌ Error exportando PDF: $e');
+      AlertService.showError(
+        context,
+        'Error',
+        'Error al exportar reporte: $e',
+      );
+    }
+  }
+
+  pw.TableRow _buildTableRow(String label, String value, [bool isHeader = false]) {
+    return pw.TableRow(
+      decoration: isHeader 
+          ? pw.BoxDecoration(color: PdfColors.blue100)
+          : null,
+      children: [
+        pw.Padding(
+          padding: pw.EdgeInsets.all(8),
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontSize: isHeader ? 12 : 11,
+            ),
+          ),
+        ),
+        pw.Padding(
+          padding: pw.EdgeInsets.all(8),
+          child: pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontSize: isHeader ? 12 : 11,
+            ),
+            textAlign: pw.TextAlign.right,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDateForFile(DateTime date) {
+    return '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}_${date.hour.toString().padLeft(2, '0')}${date.minute.toString().padLeft(2, '0')}';
   }
 }

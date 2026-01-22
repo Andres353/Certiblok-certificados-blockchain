@@ -196,13 +196,6 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
         } else {
           print('❌ Error enviando email: ${emailResult['message']}');
         }
-        
-        // Mostrar credenciales si están disponibles
-        if (emailResult['credentials'] != null) {
-          final creds = emailResult['credentials'];
-          final credsMessage = 'Credenciales del Emisor:\n\nEmail: ${creds['email']}\nContraseña: ${creds['password']}\nNombre: ${creds['fullName']}';
-          AlertService.showSuccess(context, 'Credenciales', credsMessage);
-        }
       }
 
       // Limpiar campos DESPUÉS de enviar email
@@ -213,15 +206,11 @@ class _ManageEmisoresScreenState extends State<ManageEmisoresScreen> {
       // Recargar lista
       await _loadEmisores();
 
-      // Mostrar mensaje con contraseña si se generó automáticamente
-      String message = _generatePassword 
-          ? 'Emisor creado exitosamente. Contraseña temporal: $password'
-          : 'Emisor creado exitosamente';
+      // Mostrar mensaje de éxito sin mostrar la contraseña
+      String message = 'Emisor creado exitosamente';
 
       if (_sendEmail) {
-        message += _generatePassword 
-            ? '\nLas credenciales han sido enviadas por email.'
-            : '\nNotificación enviada por email.';
+        message += '\nLas credenciales han sido enviadas por email.';
       }
 
       AlertService.showSuccess(context, 'Éxito', message);

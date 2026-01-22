@@ -1,11 +1,13 @@
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:frontend_app/widgets/user_info_card.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/user_context_service.dart';
 import '../../services/institution_status_service.dart';
 import '../../services/adapters/auth_adapter.dart';
 import '../../widgets/suspended_institution_widget.dart';
+import '../../widgets/auth_session_monitor.dart';
 import 'admin_emit_certificate_screen.dart';
 import 'admin_bulk_emit_certificates_screen.dart';
 import 'all_certificates_screen.dart';
@@ -160,21 +162,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildNormalDashboard(BuildContext context, bool isWeb) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Administrador - Dashboard'),
-        backgroundColor: Color(0xff6C4DDC),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.logout),
-            tooltip: 'Cerrar Sesión',
-            onPressed: _logout,
-          ),
-        ],
+    return AuthSessionMonitor(
+      onSessionExpired: () {
+        // La sesión ya fue cerrada, solo redirigir
+        html.window.location.reload();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Administrador - Dashboard'),
+          backgroundColor: Color(0xff6C4DDC),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: Icon(Icons.logout),
+              tooltip: 'Cerrar Sesión',
+              onPressed: _logout,
+            ),
+          ],
+        ),
+        body: isWeb ? _buildWebLayout(context) : _buildMobileLayout(context),
       ),
-      body: isWeb ? _buildWebLayout(context) : _buildMobileLayout(context),
     );
   }
 
@@ -185,85 +193,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header clickeable
-          GestureDetector(
-            onTap: () => _showInstitutionInfoModal(context),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0xff6C4DDC).withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Bienvenido, ${_userContext?.userName ?? 'Administrador'}',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Administrador de ${_userContext?.currentInstitution?.name ?? 'Institución'}',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 18,
-                              ),
-                            ),
-                            if (_userContext?.currentInstitution?.shortName != null) ...[
-                              SizedBox(height: 4),
-                              Text(
-                                '(${_userContext!.currentInstitution!.shortName})',
-                                style: TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 16,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.info_outline,
-                        color: Colors.white70,
-                        size: 24,
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Toca para ver información detallada de la institución',
-                    style: TextStyle(
-                      color: Colors.white60,
-                      fontSize: 14,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          if (_userContext != null)
+          UserInfoCard(userContext: _userContext!, isWeb: true),
           
           SizedBox(height: 32),
           
@@ -399,85 +330,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header responsive clickeable
-          GestureDetector(
-            onTap: () => _showInstitutionInfoModal(context),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0xff6C4DDC).withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Bienvenido, ${_userContext?.userName ?? 'Administrador'}',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Administrador de ${_userContext?.currentInstitution?.name ?? 'Institución'}',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 16,
-                              ),
-                            ),
-                            if (_userContext?.currentInstitution?.shortName != null) ...[
-                              SizedBox(height: 4),
-                              Text(
-                                '(${_userContext!.currentInstitution!.shortName})',
-                                style: TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 14,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.info_outline,
-                        color: Colors.white70,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Toca para ver información detallada',
-                    style: TextStyle(
-                      color: Colors.white60,
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          if (_userContext != null)
+          UserInfoCard(userContext: _userContext!),
           
           SizedBox(height: 24),
           
@@ -936,373 +790,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
 
-  Widget _buildInfoItem(String label, String value, IconData icon, {required bool isWeb}) {
-    return Row(
-      children: [
-        Icon(
-          icon,
-          size: isWeb ? 16 : 14,
-          color: Color(0xff6C4DDC),
-        ),
-        SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: isWeb ? 12 : 10,
-                  color: Colors.grey[600],
-                ),
-              ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: isWeb ? 14 : 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xff2E2F44),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showInstitutionInfoModal(BuildContext context) {
-    final institution = _userContext?.currentInstitution;
-    if (institution == null) return;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.8,
-              maxWidth: 600,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Header del modal
-                  Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xff6C4DDC), Color(0xff8B7DDC)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.school,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Información de la Institución',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                institution.name,
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: Icon(Icons.close, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                  
-                  // Contenido del modal
-                  Padding(
-                    padding: EdgeInsets.all(24),
-                    child: _buildInstitutionInfoContent(institution),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildInstitutionInfoContent(institution) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Código de Institución
-        Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Color(0xff6C4DDC).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Color(0xff6C4DDC).withOpacity(0.3)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.qr_code,
-                    color: Color(0xff6C4DDC),
-                    size: 20,
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Código de Institución',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xff2E2F44),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Text(
-                        institution.institutionCode,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xff6C4DDC),
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () => _copyInstitutionCode(institution.institutionCode),
-                    icon: Icon(Icons.copy, color: Color(0xff6C4DDC)),
-                    tooltip: 'Copiar código',
-                  ),
-                ],
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Comparte este código con tus estudiantes para que puedan registrarse en tu institución',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        SizedBox(height: 20),
-        
-        // Descripción
-        if (institution.description.isNotEmpty) ...[
-          Text(
-            'Descripción:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Color(0xff2E2F44),
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
-            institution.description,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          ),
-          SizedBox(height: 16),
-        ],
-        
-        // Información adicional
-        Row(
-          children: [
-            Expanded(
-              child: _buildInfoItem(
-                'Estado',
-                institution.status.displayName,
-                Icons.info_outline,
-                isWeb: true,
-              ),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: _buildInfoItem(
-                'Programas',
-                '${institution.settings.supportedPrograms.length}',
-                Icons.menu_book,
-                isWeb: true,
-              ),
-            ),
-          ],
-        ),
-        
-        SizedBox(height: 16),
-        
-        Row(
-          children: [
-            Expanded(
-              child: _buildInfoItem(
-                'Registro de Estudiantes',
-                institution.settings.allowStudentRegistration ? 'Habilitado' : 'Deshabilitado',
-                Icons.person_add,
-                isWeb: true,
-              ),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: _buildInfoItem(
-                'Verificación Pública',
-                institution.settings.allowPublicVerification ? 'Habilitada' : 'Deshabilitada',
-                Icons.verified,
-                isWeb: true,
-              ),
-            ),
-          ],
-        ),
-        
-        SizedBox(height: 16),
-        
-        Row(
-          children: [
-            Expanded(
-              child: _buildInfoItem(
-                'Blockchain',
-                institution.settings.enableBlockchain ? 'Habilitado' : 'Deshabilitado',
-                Icons.link,
-                isWeb: true,
-              ),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: _buildInfoItem(
-                'Idioma',
-                institution.settings.defaultLanguage.toUpperCase(),
-                Icons.language,
-                isWeb: true,
-              ),
-            ),
-          ],
-        ),
-        
-        SizedBox(height: 20),
-        
-        // Fechas
-        Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Fechas de Registro',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xff2E2F44),
-                ),
-              ),
-              SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoItem(
-                      'Creado',
-                      institution.createdAt != null 
-                          ? '${institution.createdAt!.day}/${institution.createdAt!.month}/${institution.createdAt!.year}'
-                          : 'No disponible',
-                      Icons.calendar_today,
-                      isWeb: true,
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: _buildInfoItem(
-                      'Actualizado',
-                      institution.updatedAt != null 
-                          ? '${institution.updatedAt!.day}/${institution.updatedAt!.month}/${institution.updatedAt!.year}'
-                          : 'No disponible',
-                      Icons.update,
-                      isWeb: true,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _copyInstitutionCode(String code) {
-    if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Código no disponible'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    Clipboard.setData(ClipboardData(text: code));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Código copiado al portapapeles: $code'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
-      ),
-    );
-  }
+  
 
   void _navigateToAllCertificates(BuildContext context) {
     Navigator.push(

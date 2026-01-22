@@ -1405,7 +1405,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
         // Leer los bytes del archivo
         final bytes = file.bytes;
         if (bytes != null) {
-          // Subir a Firebase Storage
+          // Subir a Supabase Storage
           final url = await ImageUploadService.uploadImageBytes(
             bytes,
             'certificate_logos/${DateTime.now().millisecondsSinceEpoch}_${file.name}',
@@ -1599,7 +1599,7 @@ class _BasicTemplateEditorScreenState extends State<BasicTemplateEditorScreen> {
         // Leer los bytes del archivo
         final bytes = file.bytes;
         if (bytes != null) {
-          // Subir a Firebase Storage
+          // Subir a Supabase Storage
           final url = await ImageUploadService.uploadImageBytes(
             bytes,
             'certificate_signatures/${DateTime.now().millisecondsSinceEpoch}_${file.name}',
